@@ -62,7 +62,7 @@ data:
   target: icm.data.data_module.DataModuleFromConfig
   params:
     # train_batch_size is set here, validation_batch_size is 1
-    batch_size: 8
+    batch_size: 16
     num_workers: 20
     shuffle_train: False
     train:
@@ -113,5 +113,5 @@ trainer:
         every_n_epochs: 1
         # save_last: True
         # save_weights_only: False
-        filename: "{epoch:02d}-{mse_all:.5f}-{mse_unknown:.5f}"
-        # auto_insert_metric_name: False
+        filename: "{epoch:02d}-{val/mse_all:.5f}-{val/mse_unknown:.5f}"
+        auto_insert_metric_name: True

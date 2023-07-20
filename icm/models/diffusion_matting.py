@@ -58,7 +58,7 @@ class DiffusionMatting(pl.LightningModule):
 
     def on_train_epoch_start(self, unused=None):
         self.log("epoch", self.current_epoch, on_step=False,
-                 on_epoch=True, prog_bar=False)
+                 on_epoch=True, prog_bar=False, sync_dist = True)
 
     def get_progress_bar_dict(self):
         # don't show the version number
@@ -108,16 +108,20 @@ class DiffusionMatting(pl.LightningModule):
         losses = self.criterion(sample_map, {"phas": output}, {"phas": labels})
 
         # log training loss
-        self.log_dict(losses, on_step=True, on_epoch=True, prog_bar=False)
+
+        # add prefix 'train' to the keys
+        losses = {f"train/{key}": losses.get(key) for key in losses}
+        
+        self.log_dict(losses, on_step=True, on_epoch=True, prog_bar=False, sync_dist = True)
 
         # log learning rate
         self.log("lr", self.trainer.optimizers[0].param_groups[0]
-                 ["lr"], on_step=True, on_epoch=False, prog_bar=True)
+                 ["lr"], on_step=True, on_epoch=False, prog_bar=True, sync_dist = True)
 
         # init loss tensor
         loss = torch.zeros(1).type_as(labels)
 
-        self.log("loss", loss, on_step=True, on_epoch=True, prog_bar=True)
+        self.log("train/loss", loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist = True)
 
         for key in losses:
             loss += losses[key]
@@ -143,6 +147,8 @@ class DiffusionMatting(pl.LightningModule):
         image_name = image_name[0].split('.')[0]
         image = batch['image'][0].cpu().numpy()
         
+        # if dataset_name == 'AIM':
+        #     print(f'validation-{dataset_name}/{image_name}')
         # compute loss
 
         metrics_unknown, metrics_all = self.compute_four_metrics(
@@ -150,11 +156,12 @@ class DiffusionMatting(pl.LightningModule):
 
         # log validation metrics
         self.log_dict(metrics_unknown, on_step=False,
-                      on_epoch=True, prog_bar=False)
+                      on_epoch=True, prog_bar=False, sync_dist = True)
         self.log_dict(metrics_all, on_step=False,
-                      on_epoch=True, prog_bar=False)
+                      on_epoch=True, prog_bar=False, sync_dist = True)
         # self.logger.experiment.add_scalars('metrics_unknown', metrics_unknown)
         # self.logger.experiment.add_scalars('metrics_all', metrics_all)
+        
         self.log_validation_result(image, guidance_map, pred, label, dataset_name, image_name)
         
     def log_validation_result(self, image, guidance_map, pred, label, dataset_name, image_name):
@@ -176,9 +183,9 @@ class DiffusionMatting(pl.LightningModule):
         
         # log image
         self.logger.experiment.add_images(
-            f'validation-{dataset_name}-{image_name}', image_to_log, self.current_epoch, dataformats='NHWC')
+            f'validation-{dataset_name}/{image_name}', image_to_log, self.current_epoch, dataformats='NHWC')
 
-    def compute_four_metrics(self, pred, label, trimap):
+    def compute_four_metrics(self, pred, label, trimap, prefix="val"):
         # compute loss for unknown pixels
         mse_loss_unknown_ = compute_mse_loss(pred, label, trimap)
         sad_loss_unknown_ = compute_sad_loss(
@@ -200,15 +207,15 @@ class DiffusionMatting(pl.LightningModule):
             pred, label, trimap)
 
         # log validation metrics
-        metrics_unknown = {'mse_unknown': mse_loss_unknown_,
-                           'sad_unknown': sad_loss_unknown_,
-                           'conn_unknown': conn_loss_unknown_,
-                           'grad_unknown': grad_loss_unknown_}
+        metrics_unknown = {f'{prefix}/mse_unknown': mse_loss_unknown_,
+                           f'{prefix}/sad_unknown': sad_loss_unknown_,
+                           f'{prefix}/conn_unknown': conn_loss_unknown_,
+                           f'{prefix}/grad_unknown': grad_loss_unknown_}
 
-        metrics_all = {'mse_all': mse_loss_all_,
-                       'sad_all': sad_loss_all_,
-                       'conn_all': conn_loss_all_,
-                       'grad_all': grad_loss_all_}
+        metrics_all = {f'{prefix}/mse_all': mse_loss_all_,
+                       f'{prefix}/sad_all': sad_loss_all_,
+                       f'{prefix}/conn_all': conn_loss_all_,
+                       f'{prefix}/grad_all': grad_loss_all_}
 
         return metrics_unknown, metrics_all
 
