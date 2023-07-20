@@ -58,8 +58,8 @@ class DiffusionMatting(pl.LightningModule):
 
     def on_train_epoch_start(self, unused=None):
         self.log("epoch", self.current_epoch, on_step=False,
-                    on_epoch=True, prog_bar=False)
-        
+                 on_epoch=True, prog_bar=False)
+
     def get_progress_bar_dict(self):
         # don't show the version number
         items = super().get_progress_bar_dict()
@@ -96,12 +96,12 @@ class DiffusionMatting(pl.LightningModule):
         images_guidance = torch.cat((images, guidance_map), dim=1)
 
         output = self(images, images_guidance)
-        return output
+        return output, guidance_map
 
     def training_step(self, batch, batch_idx):
         labels, trimaps = batch["alpha"], batch["trimap"]
 
-        output = self.shared_step(batch, batch_idx)
+        output, _ = self.shared_step(batch, batch_idx)
 
         sample_map = torch.zeros_like(trimaps)
         sample_map[trimaps == 1] = 1
@@ -116,7 +116,7 @@ class DiffusionMatting(pl.LightningModule):
 
         # init loss tensor
         loss = torch.zeros(1).type_as(labels)
-        
+
         self.log("loss", loss, on_step=True, on_epoch=True, prog_bar=True)
 
         for key in losses:
@@ -127,19 +127,58 @@ class DiffusionMatting(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         # batch size = 1
         assert batch["image"].shape[0] == 1
+
+        labels, trimaps, dataset_name, image_name = batch["alpha"], batch["trimap"], batch["dataset_name"], batch["image_name"]
+
+        output, guidance_map = self.shared_step(batch, batch_idx)
         
-        labels, trimaps = batch["alpha"], batch["trimap"]
-
-        output = self.shared_step(batch, batch_idx)
-
         label = labels.squeeze().cpu().numpy()*255.0
-
         trimap = trimaps.squeeze().cpu().numpy()*128
-
         pred = output.squeeze().cpu().numpy()*255.0
-
+        
+        # for logging
+        guidance_map = guidance_map.squeeze().cpu().numpy()
+        guidance_map = guidance_map/2.0 if self.guidance_type == "trimap" else guidance_map/1.0
+        dataset_name = dataset_name[0]
+        image_name = image_name[0].split('.')[0]
+        image = batch['image'][0].cpu().numpy()
+        
         # compute loss
 
+        metrics_unknown, metrics_all = self.compute_four_metrics(
+            pred, label, trimap)
+
+        # log validation metrics
+        self.log_dict(metrics_unknown, on_step=False,
+                      on_epoch=True, prog_bar=False)
+        self.log_dict(metrics_all, on_step=False,
+                      on_epoch=True, prog_bar=False)
+        # self.logger.experiment.add_scalars('metrics_unknown', metrics_unknown)
+        # self.logger.experiment.add_scalars('metrics_all', metrics_all)
+        self.log_validation_result(image, guidance_map, pred, label, dataset_name, image_name)
+        
+    def log_validation_result(self, image, guidance_map, pred, label, dataset_name, image_name):
+        ########### log image, guidance_map, output and gt ###########
+        # process image
+        image = image.transpose(1, 2, 0)
+        image = image * np.array([0.229, 0.224, 0.225]) + \
+            np.array([0.485, 0.456, 0.406])
+        image = np.clip(image, 0, 1)
+        
+        # process guidance_map, pred, label
+        guidance_map = np.stack((guidance_map,)*3, axis=-1)
+        pred = np.stack((pred/255.0,)*3, axis=-1)
+        label = np.stack((label/255.0,)*3, axis=-1)
+        
+        # concat pred, guidance_map, label, image
+        image_to_log = np.stack(
+            (image, guidance_map, label, pred), axis=0)
+        
+        # log image
+        self.logger.experiment.add_images(
+            f'validation-{dataset_name}-{image_name}', image_to_log, self.current_epoch, dataformats='NHWC')
+
+    def compute_four_metrics(self, pred, label, trimap):
         # compute loss for unknown pixels
         mse_loss_unknown_ = compute_mse_loss(pred, label, trimap)
         sad_loss_unknown_ = compute_sad_loss(
@@ -171,12 +210,7 @@ class DiffusionMatting(pl.LightningModule):
                        'conn_all': conn_loss_all_,
                        'grad_all': grad_loss_all_}
 
-        self.log_dict(metrics_unknown, on_step=False,
-                      on_epoch=True, prog_bar=False)
-        self.log_dict(metrics_all, on_step=False,
-                      on_epoch=True, prog_bar=False)
-        # self.logger.experiment.add_scalars('metrics_unknown', metrics_unknown)
-        # self.logger.experiment.add_scalars('metrics_all', metrics_all)
+        return metrics_unknown, metrics_all
 
     def configure_optimizers(self):
         lr = self.learning_rate
@@ -198,11 +232,11 @@ class DiffusionMatting(pl.LightningModule):
             return [opt], scheduler
         return opt
 
-# TODO: move to callbacks.py
-
 
 class ModifyModelSave(pl.Callback):
+    # unused
     # TODO: state_dict contains no clip and diffusion model, but why?
+    # TODO: move to callbacks.py
     
     def delete_frozen_params(self, ckpt):
 

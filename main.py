@@ -91,6 +91,9 @@ if __name__ == '__main__':
     trainer_opt = argparse.Namespace(**cfg_trainer)
     trainer = Trainer.from_argparse_args(trainer_opt)
 
+    # save configs to log
+    trainer.logger.log_hyperparams(cfg)
+    
     """=== Start training ==="""
 
     trainer.fit(model, data)

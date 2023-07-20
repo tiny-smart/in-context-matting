@@ -32,12 +32,9 @@ pip install -v -U git+https://github.com/facebookresearch/xformers.git@main#egg=
 
 ## TODO
 
-# logger
-image
-
 # validation
-calculate loss when bs > 1
-
+calculate loss and log when bs > 1
+多个validation dataloader
 
 # dataset
 区分完整前景和不完整前景（与边界是否相邻）

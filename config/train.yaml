@@ -100,7 +100,7 @@ trainer:
     target: pytorch_lightning.loggers.tensorboard.TensorBoardLogger
     params:
       save_dir: logs # set in main.py 
-      # default_hp_metric: False
+      default_hp_metric: False
 
 
   cfg_callbacks:
@@ -113,5 +113,5 @@ trainer:
         every_n_epochs: 1
         # save_last: True
         # save_weights_only: False
-        filename: "{epoch:02d}-{mse_all:.4f}-{mse_unknown:.4f}"
+        filename: "{epoch:02d}-{mse_all:.5f}-{mse_unknown:.5f}"
         # auto_insert_metric_name: False
