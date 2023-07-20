@@ -1,0 +1,8 @@
+.*
+!/.gitignore
+
+reference_code/
+__pycache__/
+logs/
+ckpt/
+pretrained_models/
