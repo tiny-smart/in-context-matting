@@ -98,9 +98,9 @@ dataset = {'AIM', 'PPM', 'AM2k_train','AM2k_val', 'RWP636','P3M_val_np','P3M_tra
 
 def get_dir_ext(dataset):
     if  dataset == 'AIM':
-        image_dir = '/home/yezixuan/Combined_Dataset/Test_set/AIM-500/original'
-        label_dir = '/home/yezixuan/Combined_Dataset/Test_set/AIM-500/mask'
-        trimap_dir = '/home/yezixuan/Combined_Dataset/Test_set/AIM-500/trimap'
+        image_dir = '/home/yezixuan/Combined_Dataset/AIM-500/original'
+        label_dir = '/home/yezixuan/Combined_Dataset/AIM-500/mask'
+        trimap_dir = '/home/yezixuan/Combined_Dataset/AIM-500/trimap'
 
         merged_ext = '.jpg'
         alpha_ext = '.png'

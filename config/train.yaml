@@ -63,7 +63,7 @@ data:
   params:
     # train_batch_size is set here, validation_batch_size is 1
     batch_size: 16
-    num_workers: 20
+    num_workers: 8
     shuffle_train: False
     train:
       target: icm.data.data_generator.MultiDataGeneratorDoubleSet
@@ -90,7 +90,7 @@ data:
 
 trainer:
   accelerator: "ddp"
-  gpus: 2
+  gpus: 1
   max_epochs: 1000
   auto_select_gpus: False
   num_sanity_val_steps: 0
@@ -114,4 +114,4 @@ trainer:
         # save_last: True
         # save_weights_only: False
         filename: "{epoch:02d}-{val/mse_all:.5f}-{val/mse_unknown:.5f}"
-        auto_insert_metric_name: True
+        auto_insert_metric_name: False
