@@ -2,6 +2,7 @@ import scipy.ndimage
 import numpy as np
 from skimage.measure import label
 import scipy.ndimage.morphology
+import torch
 
 def compute_mse_loss(pred, target, trimap):
     error_map = (pred - target) / 255.0
@@ -90,3 +91,22 @@ def getLargestCC(segmentation):
     labels = label(segmentation, connectivity=1)
     largestCC = labels == np.argmax(np.bincount(labels.flat))
     return largestCC
+
+
+def compute_mse_loss_torch(pred, target, trimap):
+    error_map = (pred - target) / 255.0
+    # rewrite the loss with torch
+    # loss = np.sum((error_map ** 2) * (trimap == 128)) / (np.sum(trimap == 128) + 1e-8)
+    loss = torch.sum((error_map ** 2) * (trimap == 128).float()) / (torch.sum(trimap == 128).float() + 1e-8)
+
+    return loss
+
+
+def compute_sad_loss_torch(pred, target, trimap):
+    # rewrite the map with torch
+    # error_map = np.abs((pred - target) / 255.0)
+    error_map = torch.abs((pred - target) / 255.0)
+    # loss = np.sum(error_map * (trimap == 128))
+    loss = torch.sum(error_map * (trimap == 128).float())
+
+    return loss / 1000, torch.sum(trimap == 128).float()/ 1000.0

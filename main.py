@@ -1,5 +1,5 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "2,3"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
 
 from pytorch_lightning import Trainer, seed_everything
 import torch
@@ -20,7 +20,7 @@ def parse_args():
     parser.add_argument(
         "--debug",
         type=bool,
-        default=False,
+        default=True,
     )
     parser.add_argument(
         "--config",

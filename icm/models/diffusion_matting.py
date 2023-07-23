@@ -2,12 +2,12 @@ from typing import Optional
 from pytorch_lightning.utilities.types import STEP_OUTPUT
 from torch import nn
 from icm.models.criterion.matting_criterion import MattingCriterion
-from icm.models.criterion.matting_criterion_eval import compute_mse_loss, compute_sad_loss, compute_connectivity_error, compute_gradient_loss
+from icm.models.criterion.matting_criterion_eval import compute_mse_loss, compute_sad_loss, compute_connectivity_error, compute_gradient_loss, compute_mse_loss_torch, compute_sad_loss_torch
 from icm.util import instantiate_from_config, instantiate_feature_extractor
 import pytorch_lightning as pl
 import torch
 from torch.optim.lr_scheduler import LambdaLR
-import numpy as np
+
 
 
 class DiffusionMatting(pl.LightningModule):
@@ -45,6 +45,7 @@ class DiffusionMatting(pl.LightningModule):
                 "loss_gradient_penalty",
             ]
         )
+        self.register_buffer("gpu_count", torch.zeros(2))
 
     # def configure_sharded_model(self):
     #     self.feature_extractor = instantiate_feature_extractor(
@@ -58,7 +59,7 @@ class DiffusionMatting(pl.LightningModule):
 
     def on_train_epoch_start(self, unused=None):
         self.log("epoch", self.current_epoch, on_step=False,
-                 on_epoch=True, prog_bar=False, sync_dist = True)
+                 on_epoch=True, prog_bar=False, sync_dist=True)
 
     def get_progress_bar_dict(self):
         # don't show the version number
@@ -111,17 +112,19 @@ class DiffusionMatting(pl.LightningModule):
 
         # add prefix 'train' to the keys
         losses = {f"train/{key}": losses.get(key) for key in losses}
-        
-        self.log_dict(losses, on_step=True, on_epoch=True, prog_bar=False, sync_dist = True)
+
+        self.log_dict(losses, on_step=True, on_epoch=True,
+                      prog_bar=False, sync_dist=True)
 
         # log learning rate
         self.log("lr", self.trainer.optimizers[0].param_groups[0]
-                 ["lr"], on_step=True, on_epoch=False, prog_bar=True, sync_dist = True)
+                 ["lr"], on_step=True, on_epoch=False, prog_bar=True, sync_dist=True)
 
         # init loss tensor
         loss = torch.zeros(1).type_as(labels)
 
-        self.log("train/loss", loss, on_step=True, on_epoch=True, prog_bar=True, sync_dist = True)
+        self.log("train/loss", loss, on_step=True,
+                 on_epoch=False, prog_bar=True, sync_dist=True)
 
         for key in losses:
             loss += losses[key]
@@ -132,90 +135,77 @@ class DiffusionMatting(pl.LightningModule):
         # batch size = 1
         assert batch["image"].shape[0] == 1
 
-        labels, trimaps, dataset_name, image_name = batch["alpha"], batch["trimap"], batch["dataset_name"], batch["image_name"]
+        labels, trimaps, dataset_name, image_name = batch["alpha"], batch[
+            "trimap"], batch["dataset_name"], batch["image_name"]
 
         output, guidance_map = self.shared_step(batch, batch_idx)
         
-        label = labels.squeeze().cpu().numpy()*255.0
-        trimap = trimaps.squeeze().cpu().numpy()*128
-        pred = output.squeeze().cpu().numpy()*255.0
-        
+        label = labels.squeeze()*255.0
+        trimap = trimaps.squeeze()*128
+        pred = output.squeeze()*255.0
+
         # for logging
-        guidance_map = guidance_map.squeeze().cpu().numpy()
+        guidance_map = guidance_map.squeeze()
         guidance_map = guidance_map/2.0 if self.guidance_type == "trimap" else guidance_map/1.0
         dataset_name = dataset_name[0]
         image_name = image_name[0].split('.')[0]
-        image = batch['image'][0].cpu().numpy()
-        
-        # if dataset_name == 'AIM':
-        #     print(f'validation-{dataset_name}/{image_name}')
+        image = batch['image'][0]
+
         # compute loss
 
-        metrics_unknown, metrics_all = self.compute_four_metrics(
+        metrics_unknown, metrics_all = self.compute_two_metrics(
             pred, label, trimap)
 
         # log validation metrics
         self.log_dict(metrics_unknown, on_step=False,
-                      on_epoch=True, prog_bar=False, sync_dist = True)
+                      on_epoch=True, prog_bar=False, sync_dist=True)
         self.log_dict(metrics_all, on_step=False,
-                      on_epoch=True, prog_bar=False, sync_dist = True)
-        # self.logger.experiment.add_scalars('metrics_unknown', metrics_unknown)
-        # self.logger.experiment.add_scalars('metrics_all', metrics_all)
-        
-        self.log_validation_result(image, guidance_map, pred, label, dataset_name, image_name)
-        
+                      on_epoch=True, prog_bar=False, sync_dist=True)
+
+        self.log_validation_result(
+            image, guidance_map, pred, label, dataset_name, image_name)
+
     def log_validation_result(self, image, guidance_map, pred, label, dataset_name, image_name):
         ########### log image, guidance_map, output and gt ###########
         # process image
-        image = image.transpose(1, 2, 0)
-        image = image * np.array([0.229, 0.224, 0.225]) + \
-            np.array([0.485, 0.456, 0.406])
-        image = np.clip(image, 0, 1)
-        
+        image = image.permute(1, 2, 0)
+        image = image * torch.tensor([0.229, 0.224, 0.225], device=self.device) + \
+            torch.tensor([0.485, 0.456, 0.406], device=self.device)
+        # clip to [0, 1]
+        image = torch.clamp(image, 0, 1)
+
         # process guidance_map, pred, label
-        guidance_map = np.stack((guidance_map,)*3, axis=-1)
-        pred = np.stack((pred/255.0,)*3, axis=-1)
-        label = np.stack((label/255.0,)*3, axis=-1)
-        
+        guidance_map = torch.stack((guidance_map,)*3, axis=-1)
+        pred = torch.stack((pred/255.0,)*3, axis=-1)
+        label = torch.stack((label/255.0,)*3, axis=-1)
+
         # concat pred, guidance_map, label, image
-        image_to_log = np.stack(
+        image_to_log = torch.stack(
             (image, guidance_map, label, pred), axis=0)
         
         # log image
         self.logger.experiment.add_images(
             f'validation-{dataset_name}/{image_name}', image_to_log, self.current_epoch, dataformats='NHWC')
 
-    def compute_four_metrics(self, pred, label, trimap, prefix="val"):
+    def compute_two_metrics(self, pred, label, trimap, prefix="val"):
         # compute loss for unknown pixels
-        mse_loss_unknown_ = compute_mse_loss(pred, label, trimap)
-        sad_loss_unknown_ = compute_sad_loss(
+        mse_loss_unknown_ = compute_mse_loss_torch(pred, label, trimap)
+        sad_loss_unknown_ = compute_sad_loss_torch(
             pred, label, trimap)[0]
-        conn_loss_unknown_ = compute_connectivity_error(
-            pred, label, trimap, 0.1)
-        grad_loss_unknown_ = compute_gradient_loss(
-            pred, label, trimap)
 
         # compute loss for all pixels
-        trimap = np.ones_like(label)*128
+        trimap = torch.ones_like(label)*128
 
-        mse_loss_all_ = compute_mse_loss(pred, label, trimap)
-        sad_loss_all_ = compute_sad_loss(
+        mse_loss_all_ = compute_mse_loss_torch(pred, label, trimap)
+        sad_loss_all_ = compute_sad_loss_torch(
             pred, label, trimap)[0]
-        conn_loss_all_ = compute_connectivity_error(
-            pred, label, trimap, 0.1)
-        grad_loss_all_ = compute_gradient_loss(
-            pred, label, trimap)
 
         # log validation metrics
         metrics_unknown = {f'{prefix}/mse_unknown': mse_loss_unknown_,
-                           f'{prefix}/sad_unknown': sad_loss_unknown_,
-                           f'{prefix}/conn_unknown': conn_loss_unknown_,
-                           f'{prefix}/grad_unknown': grad_loss_unknown_}
+                           f'{prefix}/sad_unknown': sad_loss_unknown_,}
 
         metrics_all = {f'{prefix}/mse_all': mse_loss_all_,
-                       f'{prefix}/sad_all': sad_loss_all_,
-                       f'{prefix}/conn_all': conn_loss_all_,
-                       f'{prefix}/grad_all': grad_loss_all_}
+                       f'{prefix}/sad_all': sad_loss_all_,}
 
         return metrics_unknown, metrics_all
 
@@ -244,7 +234,7 @@ class ModifyModelSave(pl.Callback):
     # unused
     # TODO: state_dict contains no clip and diffusion model, but why?
     # TODO: move to callbacks.py
-    
+
     def delete_frozen_params(self, ckpt):
 
         # delete params with requires_grad=False
