@@ -3,11 +3,12 @@ model:
 
   params:
     learning_rate: 0.001
-
+    
     # which layer to use for matting
     feature_index: 6
     guidance_type: "trimap" # 'coarse_map', 'none', 'trimap'
     use_scheduler: True
+    train_adapter_params: False
 
     scheduler_config:
       target: icm.lr_scheduler.LambdaLinearScheduler
@@ -62,9 +63,9 @@ data:
   target: icm.data.data_module.DataModuleFromConfig
   params:
     # train_batch_size is set here, validation_batch_size is 1
-    batch_size: 2
+    batch_size: 16
     # train_loader_num_workers is set here, validation_loader_num_workers is 0
-    num_workers: 0
+    num_workers: 4
     shuffle_train: False
     train:
       target: icm.data.data_generator.MultiDataGeneratorDoubleSet
@@ -91,7 +92,7 @@ data:
 
 trainer:
   accelerator: "ddp"
-  gpus: 2
+  gpus: 1
   max_epochs: 1000
   auto_select_gpus: False
   num_sanity_val_steps: 0

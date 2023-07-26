@@ -566,7 +566,7 @@ class LdmExtractor(FeatureExtractor):
             batched_inputs (dict): expected keys: "img", Optional["caption"]
 
         """
-            
+
         features = []
 
         image = batched_inputs["img"]
@@ -752,7 +752,7 @@ class LdmImplicitCaptionerExtractor(nn.Module):
     def set_requires_grad(self, requires_grad):
         for p in self.ldm_extractor.ldm.ldm.model.parameters():
             p.requires_grad = requires_grad
-    
+
     def reset_dim_stride(self):
         self.ldm_extractor.reset_dim_stride()
         self.ldm_extractor._freeze()
@@ -761,17 +761,26 @@ class LdmImplicitCaptionerExtractor(nn.Module):
         super().train(mode=False)
         for p in self.parameters():
             p.requires_grad = False
-            
-    def get_trainable_parameters(self):
+
+    def get_trainable_params(self):
         '''
         alpha_cond
         alpha_cond_time_embed
-        clip_projection.positional_embedding
-        clip_projection.linear.weight
-        clip_projection.linear.bias
+        clip_project.positional_embedding
+        clip_project.linear.weight
+        clip_project.linear.bias
         time_embed_project.positional_embedding
         time_embed_project.linear.weight
         time_embed_project.linear.bias
         '''
         # TODO: add trainable_parameters
-        pass
+        name_list = ['alpha_cond', 'alpha_cond_time_embed', 'clip_project.positional_embedding',
+                     'clip_project.linear.weight', 'clip_project.linear.bias', 'time_embed_project.positional_embedding',
+                     'time_embed_project.linear.weight', 'time_embed_project.linear.bias']
+        trainable_parameters = []
+        for name, param in self.named_parameters():
+            if name in name_list:
+                trainable_parameters.append(param)
+                # set requires_grad to True
+                param.requires_grad = True
+        return trainable_parameters

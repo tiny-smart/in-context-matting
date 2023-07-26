@@ -33,7 +33,7 @@ pip install -v -U git+https://github.com/facebookresearch/xformers.git@main#egg=
 ## TODO
 
 # validation
-现在只能在单个gpu运行，可能由于cpu（）的原因
+现在只能在单个gpu log image, 指标计算是单卡还是多卡不清楚
 calculate loss and log when bs > 1
 多个validation dataloader
 

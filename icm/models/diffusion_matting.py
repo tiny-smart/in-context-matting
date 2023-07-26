@@ -1,13 +1,14 @@
 from typing import Optional
 from pytorch_lightning.utilities.types import STEP_OUTPUT
 from torch import nn
+from torch.optim.optimizer import Optimizer
 from icm.models.criterion.matting_criterion import MattingCriterion
 from icm.models.criterion.matting_criterion_eval import compute_mse_loss, compute_sad_loss, compute_connectivity_error, compute_gradient_loss, compute_mse_loss_torch, compute_sad_loss_torch
 from icm.util import instantiate_from_config, instantiate_feature_extractor
 import pytorch_lightning as pl
 import torch
 from torch.optim.lr_scheduler import LambdaLR
-
+from pytorch_lightning.utilities import grad_norm
 
 
 class DiffusionMatting(pl.LightningModule):
@@ -20,6 +21,7 @@ class DiffusionMatting(pl.LightningModule):
         guidance_type,
         use_scheduler,
         scheduler_config,
+        train_adapter_params,
     ):
         super().__init__()
 
@@ -36,6 +38,7 @@ class DiffusionMatting(pl.LightningModule):
         self.learning_rate = learning_rate
         self.use_scheduler = use_scheduler
         self.scheduler_config = scheduler_config
+        self.train_adapter_params = train_adapter_params
 
         self.criterion = MattingCriterion(
             losses=[
@@ -45,7 +48,7 @@ class DiffusionMatting(pl.LightningModule):
                 "loss_gradient_penalty",
             ]
         )
-        self.register_buffer("gpu_count", torch.zeros(2))
+        
 
     # def configure_sharded_model(self):
     #     self.feature_extractor = instantiate_feature_extractor(
@@ -68,7 +71,8 @@ class DiffusionMatting(pl.LightningModule):
         return items
 
     def forward(self, img, images_guidance):
-        x = self.feature_extractor({'img': img})[self.feature_index].detach()
+        # x = self.feature_extractor({'img': img})[self.feature_index].detach()
+        x = self.feature_extractor({'img': img})[self.feature_index]
         x = self.diffusion_decoder(x, images_guidance)
 
         return x
@@ -209,10 +213,20 @@ class DiffusionMatting(pl.LightningModule):
 
         return metrics_unknown, metrics_all
 
+    # def on_before_optimizer_step(self, optimizer: Optimizer, optimizer_idx: int):
+    #     # for debugging
+    #     norms = grad_norm(self.feature_extractor,norm_type=2)
+    #     norms_ = grad_norm(self.diffusion_decoder,norm_type=2)
+    #     print(f"alpha_cond grad norm: {norms}")
+        
     def configure_optimizers(self):
         lr = self.learning_rate
         params = self.diffusion_decoder.parameters()
 
+        if self.train_adapter_params:
+            params = list(params)
+            adapter_params = self.feature_extractor.get_trainable_params()
+            params = params + adapter_params
         opt = torch.optim.Adam(params, lr=lr)
 
         if self.use_scheduler:

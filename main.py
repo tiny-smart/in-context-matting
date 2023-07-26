@@ -1,5 +1,5 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 from pytorch_lightning import Trainer, seed_everything
 import torch
@@ -15,12 +15,12 @@ def parse_args():
     parser.add_argument(
         "--experiment_name",
         type=str,
-        default="reproduce_diffusion_matte",
+        default="diffusion_matte-train_adapter_params_True",
     )
     parser.add_argument(
         "--debug",
         type=bool,
-        default=True,
+        default=False,
     )
     parser.add_argument(
         "--config",
@@ -65,9 +65,9 @@ if __name__ == '__main__':
     cfg_trainer = OmegaConf.to_container(cfg_trainer)
     
     if args.debug:
-        cfg_trainer['limit_train_batches'] = 5
+        cfg_trainer['limit_train_batches'] = 2
         # cfg_trainer['log_every_n_steps'] = 1
-        # cfg_trainer['limit_val_batches'] = 3
+        cfg_trainer['limit_val_batches'] = 3
         # cfg_trainer['overfit_batches'] = 10
     
     # init logger

@@ -24,9 +24,9 @@ def instantiate_feature_extractor(cfg):
         '''
         alpha_cond
         alpha_cond_time_embed
-        clip_projection.positional_embedding
-        clip_projection.linear.weight
-        clip_projection.linear.bias
+        clip_project.positional_embedding
+        clip_project.linear.weight
+        clip_project.linear.bias
         time_embed_project.positional_embedding
         time_embed_project.linear.weight
         time_embed_project.linear.bias
