@@ -1,12 +1,11 @@
 model:
-  target: icm.models.diffusion_matting.DiffusionMatting
+  target: icm.models.in_context_matting.InContextMatting
 
   params:
     learning_rate: 0.001
-    
+
     # which layer to use for matting
     feature_index: 6
-    guidance_type: "trimap" # 'coarse_map', 'none', 'trimap'
     use_scheduler: True
     train_adapter_params: False
 
@@ -52,10 +51,11 @@ model:
         # "sd://x4-0-base": ("x4-upscaling.yaml", (2048, 2048), (512, 512)),
 
     cfg_decoder:
-      target: icm.models.decoder.detail_capture.Detail_Capture
+      target: icm.models.decoder.context_decoder.ContextDecoder
       params:
         in_chans: 960
-        img_chans: 4
+        img_chans: 3
+        n_heads: 1
         convstream_out: [48, 96, 192]
         fusion_out: [256, 128, 64, 32]
 
@@ -63,32 +63,32 @@ data:
   target: icm.data.data_module.DataModuleFromConfig
   params:
     # train_batch_size is set here, validation_batch_size is 1
-    batch_size: 2
+    batch_size: 16
     # train_loader_num_workers is set here, validation_loader_num_workers is 0
-    num_workers: 2
+    num_workers: 4
     shuffle_train: False
     train:
-      target: icm.data.data_generator.MultiDataGeneratorDoubleSet
+      target: icm.data.data_generator.ContextDataset
       params:
         crop_size: 512
         phase: train
         data:
-          target: icm.data.image_file.MultiImageFileDoubleSet
+          target: icm.data.image_file.ContextData
           params:
             ratio: 0.9
             dataset_name:
-              ["AIM", "PPM", "AM2k_train", "AM2k_val", "RWP636", "P3M_val_np"]
+              ["PPM", "AM2k", "RWP636", "P3M_val_np"]
     validation:
-      target: icm.data.data_generator.MultiDataGeneratorDoubleSet
+      target: icm.data.data_generator.ContextDataset
       params:
         crop_size: 512
         phase: val
         data:
-          target: icm.data.image_file.MultiImageFileDoubleSet
+          target: icm.data.image_file.ContextData
           params:
             ratio: 0.9
             dataset_name:
-              ["AIM", "PPM", "AM2k_train", "AM2k_val", "RWP636", "P3M_val_np"]
+              ["PPM", "AM2k", "RWP636", "P3M_val_np"]
 
 trainer:
   accelerator: "ddp"
@@ -97,13 +97,12 @@ trainer:
   auto_select_gpus: False
   num_sanity_val_steps: 0
   # weights_summary: full
-  
+
   cfg_logger:
     target: pytorch_lightning.loggers.tensorboard.TensorBoardLogger
     params:
-      save_dir: logs # set in main.py 
+      save_dir: logs # set in main.py
       default_hp_metric: False
-
 
   cfg_callbacks:
     modelcheckpoint:

@@ -1,5 +1,5 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 
 from pytorch_lightning import Trainer, seed_everything
 import torch
@@ -15,7 +15,7 @@ def parse_args():
     parser.add_argument(
         "--experiment_name",
         type=str,
-        default="diffusion_matte-train_adapter_params_True",
+        default="" # "diffusion_matte-train_adapter_params_True-bs_2",
     )
     parser.add_argument(
         "--debug",

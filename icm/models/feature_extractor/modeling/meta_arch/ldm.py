@@ -773,7 +773,7 @@ class LdmImplicitCaptionerExtractor(nn.Module):
         time_embed_project.linear.weight
         time_embed_project.linear.bias
         '''
-        # TODO: add trainable_parameters
+        
         name_list = ['alpha_cond', 'alpha_cond_time_embed', 'clip_project.positional_embedding',
                      'clip_project.linear.weight', 'clip_project.linear.bias', 'time_embed_project.positional_embedding',
                      'time_embed_project.linear.weight', 'time_embed_project.linear.bias']

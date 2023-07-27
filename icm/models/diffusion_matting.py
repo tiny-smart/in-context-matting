@@ -48,7 +48,6 @@ class DiffusionMatting(pl.LightningModule):
                 "loss_gradient_penalty",
             ]
         )
-        
 
     # def configure_sharded_model(self):
     #     self.feature_extractor = instantiate_feature_extractor(
@@ -127,11 +126,11 @@ class DiffusionMatting(pl.LightningModule):
         # init loss tensor
         loss = torch.zeros(1).type_as(labels)
 
-        self.log("train/loss", loss, on_step=True,
-                 on_epoch=False, prog_bar=True, sync_dist=True)
-
         for key in losses:
             loss += losses[key]
+
+        self.log("train/loss", loss, on_step=True,
+                 on_epoch=False, prog_bar=True, sync_dist=True)
 
         return loss
 
@@ -143,7 +142,7 @@ class DiffusionMatting(pl.LightningModule):
             "trimap"], batch["dataset_name"], batch["image_name"]
 
         output, guidance_map = self.shared_step(batch, batch_idx)
-        
+
         label = labels.squeeze()*255.0
         trimap = trimaps.squeeze()*128
         pred = output.squeeze()*255.0
@@ -186,7 +185,7 @@ class DiffusionMatting(pl.LightningModule):
         # concat pred, guidance_map, label, image
         image_to_log = torch.stack(
             (image, guidance_map, label, pred), axis=0)
-        
+
         # log image
         self.logger.experiment.add_images(
             f'validation-{dataset_name}/{image_name}', image_to_log, self.current_epoch, dataformats='NHWC')
@@ -206,10 +205,10 @@ class DiffusionMatting(pl.LightningModule):
 
         # log validation metrics
         metrics_unknown = {f'{prefix}/mse_unknown': mse_loss_unknown_,
-                           f'{prefix}/sad_unknown': sad_loss_unknown_,}
+                           f'{prefix}/sad_unknown': sad_loss_unknown_, }
 
         metrics_all = {f'{prefix}/mse_all': mse_loss_all_,
-                       f'{prefix}/sad_all': sad_loss_all_,}
+                       f'{prefix}/sad_all': sad_loss_all_, }
 
         return metrics_unknown, metrics_all
 
@@ -218,7 +217,7 @@ class DiffusionMatting(pl.LightningModule):
     #     norms = grad_norm(self.feature_extractor,norm_type=2)
     #     norms_ = grad_norm(self.diffusion_decoder,norm_type=2)
     #     print(f"alpha_cond grad norm: {norms}")
-        
+
     def configure_optimizers(self):
         lr = self.learning_rate
         params = self.diffusion_decoder.parameters()

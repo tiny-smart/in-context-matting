@@ -12,7 +12,7 @@ from torch.nn import functional as F
 from torchvision import transforms
 
 from icm.util import instantiate_from_config
-
+from icm.data.image_file import get_dir_ext
 # one-hot or class, choice: [3, 1]
 TRIMAP_CHANNEL = 1
 
@@ -748,3 +748,88 @@ class MultiDataGeneratorDoubleSet(Dataset):
             return 'P3M'
         else:
             raise ValueError('image_name {} not recognized'.format(image_name))
+
+
+class ContextDataset(Dataset):
+    # divide a dataset into train set and validation set
+    def __init__(self, data, crop_size=1024, phase="train"):
+        self.phase = phase
+        self.crop_size = crop_size
+        data = instantiate_from_config(data)
+
+        if self.phase == "train":
+            self.dataset = data.dataset_train
+            self.image_class_dict = data.image_class_dict_train
+
+        elif self.phase == "val":
+            self.dataset = data.dataset_val
+            self.image_class_dict = data.image_class_dict_val
+
+        # dict to list
+        for key, value in self.image_class_dict.items():
+            self.image_class_dict[key] = list(value)
+
+        train_trans = [
+            # RandomAffine(degrees=30, scale=[0.8, 1.25], shear=10, flip=0.5),
+
+            # CutMask(perturb_prob=CUTMASK_PROB),
+            CropResize((self.crop_size, self.crop_size)),
+            # RandomJitter(),
+            ToTensor(phase="val")]
+
+        # val_trans = [ OriginScale(), ToTensor() ]
+        val_trans = [CropResize(
+            (self.crop_size, self.crop_size)), ToTensor(phase="val")]
+
+        self.transform = {
+            'train':
+                transforms.Compose(train_trans),
+
+            'val':
+                transforms.Compose(val_trans)
+        }[phase]
+
+    def __getitem__(self, idx):
+
+        image_name, image_info = self.dataset[idx]
+
+        # get image sample
+        dataset_name = image_info['dataset_name']
+        image_sample = self.get_sample(image_name, dataset_name)
+
+        # get context image
+        class_name = str(
+            image_info['class'])+'-'+str(image_info['sub_class'])+'-'+str(image_info['HalfOrFull'])
+        context_image_name, context_dataset_name = self.image_class_dict[class_name][np.random.randint(
+            len(self.image_class_dict[class_name]))]
+        context_image_sample = self.get_sample(
+            context_image_name, context_dataset_name)
+
+        # merge image and context
+        image_sample['context_image'] = context_image_sample['image']
+        image_sample['context_guidance'] = context_image_sample['alpha']
+        image_sample['context_image_name'] = context_image_sample['image_name']
+
+        return image_sample
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def get_data_path(self, image_name, dataset_name):
+        image_dir, label_dir, trimap_dir, merged_ext, alpha_ext, trimap_ext = get_dir_ext(
+            dataset_name)
+        image_path = os.path.join(image_dir, image_name + merged_ext)
+        label_path = os.path.join(label_dir, image_name + alpha_ext)
+        trimap_path = os.path.join(trimap_dir, image_name + trimap_ext)
+
+        image = cv2.imread(image_path)
+        alpha = cv2.imread(label_path, 0)/255.
+        trimap = cv2.imread(trimap_path, 0)
+        mask = (trimap >= 170).astype(np.float32)
+        image_name = os.path.split(image_path)[-1]
+
+        sample = {'image': image, 'alpha': alpha, 'trimap': trimap,
+                  'mask': mask, 'image_name': image_name, 'alpha_shape': alpha.shape, 'dataset_name': dataset_name}
+
+        sample = self.transform(sample)
+        return sample

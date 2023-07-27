@@ -1,47 +1,81 @@
-
+from typing import Optional
+from pytorch_lightning.utilities.types import STEP_OUTPUT
 from torch import nn
+from torch.optim.optimizer import Optimizer
 from icm.models.criterion.matting_criterion import MattingCriterion
+from icm.models.criterion.matting_criterion_eval import compute_mse_loss, compute_sad_loss, compute_connectivity_error, compute_gradient_loss, compute_mse_loss_torch, compute_sad_loss_torch
 from icm.util import instantiate_from_config, instantiate_feature_extractor
 import pytorch_lightning as pl
 import torch
-import torch.nn.functional as F
-        
-class InContextMatting(pl.LightningModule):
-    def __init__(self, cfg_feature_extractor, cfg_decoder, load_odise_params_for_feature_extractor):
-        super().__init__()
-        self.feature_extractor = instantiate_feature_extractor(cfg_feature_extractor, load_odise_params_for_feature_extractor)
-        self.in_context_decoder = instantiate_from_config(cfg_decoder)
+from torch.optim.lr_scheduler import LambdaLR
+from pytorch_lightning.utilities import grad_norm
+from torch.nn import functional as F
 
-    #     self.criterion=MattingCriterion(
-    #     losses = ['unknown_l1_loss', 'known_l1_loss', 'loss_pha_laplacian', 'loss_gradient_penalty']
-    # )
-        
-    def forward(self, x, context):
-        x = self.feature_extractor(x)
-        x = self.in_context_decoder(x, context)
-    
+
+class InContextMatting(pl.LightningModule):
+    def __init__(
+        self,
+        cfg_feature_extractor,
+        cfg_decoder,
+        feature_index,
+        learning_rate,
+        use_scheduler,
+        scheduler_config,
+        train_adapter_params,
+    ):
+        super().__init__()
+
+        # init model, move to configure_shared_model, move back to init
+        self.feature_extractor = instantiate_feature_extractor(
+            cfg_feature_extractor)
+
+        self.diffusion_decoder = instantiate_from_config(cfg_decoder)
+
+        self.feature_index = feature_index
+        self.learning_rate = learning_rate
+        self.use_scheduler = use_scheduler
+        self.scheduler_config = scheduler_config
+        self.train_adapter_params = train_adapter_params
+        self.criterion = MattingCriterion(
+            losses=['unknown_l1_loss', 'known_l1_loss',
+                    'loss_pha_laplacian', 'loss_gradient_penalty']
+        )
+
+    def on_train_start(self):
+        # set layers to get features
+        self.feature_extractor.reset_dim_stride()
+
+    def on_train_epoch_start(self, unused=None):
+        self.log("epoch", self.current_epoch, on_step=False,
+                 on_epoch=True, prog_bar=False, sync_dist=True)
+
+    def get_progress_bar_dict(self):
+        # don't show the version number
+        items = super().get_progress_bar_dict()
+        items.pop("v_num", None)
+        return items
+
+    def forward(self, images, context):
+        x = self.feature_extractor({'img': images})[self.feature_index]
+        x = self.in_context_decoder(x, context, images)
+
         return x
-    
+
     def shared_step(self, batch, batch_idx):
-        context_feature, images, labels = self.get_input(batch)
-        
-        images = self.feature_extractor(images)
-        
-        output = self.in_context_decoder(images, context_feature)
-        
+        context_images, context_masks, images = batch[
+            "context_image"], batch["context_guidance"], batch["image"]
+
+        context_feature = self.feature_extractor({'img': context_images})[
+            self.feature_index].detach()
+
+        context_feature = self.context_maskpooling(
+            context_feature, context_masks)
+
+        output = self(images, context_feature)
+
         return output
 
-    def get_input(self, batch):
-        context_images, context_masks, images, labels = batch["context_image"], batch["context_guidance"], batch["image"], batch["alpha"]
-        
-        context_feature = self.feature_extractor(context_images)
-        
-        context_feature = self.context_maskpooling(context_feature, context_masks)
-        
-        return context_feature, images, labels
-    
     def context_maskpooling(self, feature, mask):
-        
         '''
         get context feature tokens by maskpooling
         feature: [B, C, H/d, W/d]
@@ -51,10 +85,120 @@ class InContextMatting(pl.LightningModule):
         mask[mask < 1] = 0
         mask = -1 * mask
         kernel_size = mask.shape[1] // feature.shape[1]
-        mask = F.max_pool2d(mask, kernel_size=kernel_size, stride=kernel_size, padding=0)
+        mask = F.max_pool2d(mask, kernel_size=kernel_size,
+                            stride=kernel_size, padding=0)
         mask = -1*mask
-        
+
         feature = mask*feature
-        feature = feature.reshape(feature.shape[0], feature.shape[1], -1).permute(0, 2, 1)
+        feature = feature.reshape(
+            feature.shape[0], feature.shape[1], -1).permute(0, 2, 1)
 
         return feature
+
+    def training_step(self, batch, batch_idx):
+        labels, trimaps = batch["alpha"], batch["trimap"]
+        output = self.shared_step(batch, batch_idx)
+        losses = self.criterion(output, labels)
+
+        # log training loss
+
+        # add prefix 'train' to the keys
+        losses = {f"train/{key}": losses.get(key) for key in losses}
+
+        self.log_dict(losses, on_step=True, on_epoch=True,
+                      prog_bar=False, sync_dist=True)
+
+        # log learning rate
+        self.log("lr", self.trainer.optimizers[0].param_groups[0]
+                 ["lr"], on_step=True, on_epoch=False, prog_bar=True, sync_dist=True)
+
+        # init loss tensor
+        loss = torch.zeros(1).type_as(labels)
+
+        for key in losses:
+            loss += losses[key]
+
+        self.log("train/loss", loss, on_step=True,
+                 on_epoch=False, prog_bar=True, sync_dist=True)
+
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        # batch size = 1
+        assert batch["image"].shape[0] == 1
+
+        labels, trimaps, dataset_name, image_name = batch["alpha"], batch[
+            "trimap"], batch["dataset_name"], batch["image_name"]
+
+        output, guidance_map = self.shared_step(batch, batch_idx)
+
+        label = labels.squeeze()*255.0
+        trimap = trimaps.squeeze()*128
+        pred = output.squeeze()*255.0
+
+        # for logging
+        guidance_map = guidance_map.squeeze()
+        guidance_map = guidance_map/2.0 if self.guidance_type == "trimap" else guidance_map/1.0
+        dataset_name = dataset_name[0]
+        image_name = image_name[0].split('.')[0]
+        image = batch['image'][0]
+
+        # compute loss
+
+        metrics_unknown, metrics_all = self.compute_two_metrics(
+            pred, label, trimap)
+
+        # log validation metrics
+        self.log_dict(metrics_unknown, on_step=False,
+                      on_epoch=True, prog_bar=False, sync_dist=True)
+        self.log_dict(metrics_all, on_step=False,
+                      on_epoch=True, prog_bar=False, sync_dist=True)
+
+        self.log_validation_result(
+            image, guidance_map, pred, label, dataset_name, image_name)
+
+    def log_validation_result(self, image, guidance_map, pred, label, dataset_name, image_name):
+        ########### log image, guidance_map, output and gt ###########
+        # process image
+        image = image.permute(1, 2, 0)
+        image = image * torch.tensor([0.229, 0.224, 0.225], device=self.device) + \
+            torch.tensor([0.485, 0.456, 0.406], device=self.device)
+        # clip to [0, 1]
+        image = torch.clamp(image, 0, 1)
+
+        # process guidance_map, pred, label
+        guidance_map = torch.stack((guidance_map,)*3, axis=-1)
+        pred = torch.stack((pred/255.0,)*3, axis=-1)
+        label = torch.stack((label/255.0,)*3, axis=-1)
+
+        # concat pred, guidance_map, label, image
+        image_to_log = torch.stack(
+            (image, guidance_map, label, pred), axis=0)
+
+        # log image
+        self.logger.experiment.add_images(
+            f'validation-{dataset_name}/{image_name}', image_to_log, self.current_epoch, dataformats='NHWC')
+
+    def configure_optimizers(self):
+        lr = self.learning_rate
+        params = self.in_context_decoder.parameters()
+
+        if self.train_adapter_params:
+            params = list(params)
+            adapter_params = self.feature_extractor.get_trainable_params()
+            params = params + adapter_params
+        opt = torch.optim.Adam(params, lr=lr)
+
+        if self.use_scheduler:
+            assert "target" in self.scheduler_config
+            scheduler = instantiate_from_config(self.scheduler_config)
+
+            scheduler = [
+                {
+                    "scheduler": LambdaLR(opt, lr_lambda=scheduler.schedule),
+                    "interval": "step",
+                    "frequency": 1,
+                }
+            ]
+            return [opt], scheduler
+        return opt
