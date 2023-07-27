@@ -193,6 +193,11 @@ class InContextMatting(pl.LightningModule):
 
         # process guidance_image, pred, label
         guidance_image = guidance_image.permute(1, 2, 0)
+        guidance_image = guidance_image * \
+            torch.tensor([0.229, 0.224, 0.225], device=self.device) + \
+                torch.tensor([0.485, 0.456, 0.406], device=self.device)
+        guidance_image = torch.clamp(guidance_image, 0, 1)
+        
         pred = torch.stack((pred/255.0,)*3, axis=-1)
         label = torch.stack((label/255.0,)*3, axis=-1)
 

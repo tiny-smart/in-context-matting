@@ -60,7 +60,7 @@ class ContextDecoder(nn.Module):
     '''
 
     def __init__(self, in_chans=960, img_chans=3,
-                 n_heads=1, convstream_out=[48, 96, 192], fusion_out=[256, 128, 64, 32]):
+                 n_heads=1, convstream_out=[48, 96, 192], fusion_out=[256, 128, 64, 32], use_context=True):
         super().__init__()
         self.context_transformer = ContextTransformerBlock(
             dim=in_chans, n_heads=n_heads, d_head=in_chans, context_dim=in_chans)
@@ -69,11 +69,13 @@ class ContextDecoder(nn.Module):
 
     def forward(self, features, context, images):
         h, w = features.shape[-2:]
-        features = rearrange(features, "b c h w -> b (h w) c").contiguous()
-        # context = rearrange(context, "b c h w -> b (h w) c").contiguous()
-        features = self.context_transformer(features, context)
-        features = rearrange(
-            features, "b (h w) c -> b c h w", h=h, w=w).contiguous()
+        
+        if self.use_context:
+            features = rearrange(features, "b c h w -> b (h w) c").contiguous()
+            features = self.context_transformer(features, context)
+            features = rearrange(
+                features, "b (h w) c -> b c h w", h=h, w=w).contiguous()
+            
         features = self.detail_capture(features, images)
 
         return features

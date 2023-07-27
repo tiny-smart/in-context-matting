@@ -18,7 +18,7 @@ def parse_args():
         type=str,
         # "diffusion_matte-train_adapter_params_True-bs_2",
         # "in_context_matting-0.1",
-        default="diffusion_matte-train_adapter_params_True-bs_2",
+        default="in_context_matting-0.1_unuse_context",
     )
     parser.add_argument(
         "--debug",
@@ -30,7 +30,7 @@ def parse_args():
         type=str,
         # "config/train.yaml"
         # "config/train_in_context_matting.yaml"
-        default="config/train.yaml",
+        default="config/train_in_context_matting.yaml",
     )
     parser.add_argument(
         "--logdir",

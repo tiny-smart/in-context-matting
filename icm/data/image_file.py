@@ -282,9 +282,9 @@ class ContextData():
         dataset_list = list(dataset.items())
         dataset_list.sort()
         self.rng.shuffle(dataset_list)
-
+        
         # split dataset into train and val
-        dataset_train, dataset_val = self._split(dataset, ratio)
+        dataset_train, dataset_val = self._split(dataset_list, ratio)
 
         # get image_class_dict
         image_class_dict_train = self.get_image_class_dict(dataset_train)
@@ -295,14 +295,12 @@ class ContextData():
         self.dataset_train = dataset_train
         self.dataset_val = dataset_val
 
-    def _split(self, data_dict, ratio):
-        num = len(data_dict)
+    def _split(self, data_list, ratio):
+        num = len(data_list)
         split = int(num * ratio)
 
-        dataset_list = list(data_dict.items())
-
-        dataset_train = dict(dataset_list[:split])
-        dataset_val = dict(dataset_list[split:])
+        dataset_train = dict(data_list[:split])
+        dataset_val = dict(data_list[split:])
         return dataset_train, dataset_val
 
     def get_image_class_dict(self, dataset):
