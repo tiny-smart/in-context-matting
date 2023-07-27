@@ -8,7 +8,7 @@ model:
     feature_index: 6
     guidance_type: "trimap" # 'coarse_map', 'none', 'trimap'
     use_scheduler: True
-    train_adapter_params: False
+    train_adapter_params: True
 
     scheduler_config:
       target: icm.lr_scheduler.LambdaLinearScheduler

@@ -767,8 +767,9 @@ class ContextDataset(Dataset):
 
         # dict to list
         for key, value in self.image_class_dict.items():
-            self.image_class_dict[key] = list(value)
-
+            self.image_class_dict[key] = list(value.items())
+        self.dataset = list(self.dataset.items())
+        
         train_trans = [
             # RandomAffine(degrees=30, scale=[0.8, 1.25], shear=10, flip=0.5),
 
@@ -800,7 +801,7 @@ class ContextDataset(Dataset):
         # get context image
         class_name = str(
             image_info['class'])+'-'+str(image_info['sub_class'])+'-'+str(image_info['HalfOrFull'])
-        context_image_name, context_dataset_name = self.image_class_dict[class_name][np.random.randint(
+        (context_image_name, context_dataset_name) = self.image_class_dict[class_name][np.random.randint(
             len(self.image_class_dict[class_name]))]
         context_image_sample = self.get_sample(
             context_image_name, context_dataset_name)
@@ -815,7 +816,7 @@ class ContextDataset(Dataset):
     def __len__(self):
         return len(self.dataset)
 
-    def get_data_path(self, image_name, dataset_name):
+    def get_sample(self, image_name, dataset_name):
         image_dir, label_dir, trimap_dir, merged_ext, alpha_ext, trimap_ext = get_dir_ext(
             dataset_name)
         image_path = os.path.join(image_dir, image_name + merged_ext)

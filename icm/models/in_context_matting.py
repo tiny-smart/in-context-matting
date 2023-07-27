@@ -29,7 +29,7 @@ class InContextMatting(pl.LightningModule):
         self.feature_extractor = instantiate_feature_extractor(
             cfg_feature_extractor)
 
-        self.diffusion_decoder = instantiate_from_config(cfg_decoder)
+        self.in_context_decoder = instantiate_from_config(cfg_decoder)
 
         self.feature_index = feature_index
         self.learning_rate = learning_rate
@@ -84,7 +84,7 @@ class InContextMatting(pl.LightningModule):
         '''
         mask[mask < 1] = 0
         mask = -1 * mask
-        kernel_size = mask.shape[1] // feature.shape[1]
+        kernel_size = mask.shape[2] // feature.shape[2]
         mask = F.max_pool2d(mask, kernel_size=kernel_size,
                             stride=kernel_size, padding=0)
         mask = -1*mask
@@ -98,7 +98,10 @@ class InContextMatting(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         labels, trimaps = batch["alpha"], batch["trimap"]
         output = self.shared_step(batch, batch_idx)
-        losses = self.criterion(output, labels)
+        
+        sample_map = torch.zeros_like(trimaps)
+        sample_map[trimaps == 1] = 1
+        losses = self.criterion(sample_map, {"phas": output}, {"phas": labels})
 
         # log training loss
 
@@ -127,18 +130,18 @@ class InContextMatting(pl.LightningModule):
         # batch size = 1
         assert batch["image"].shape[0] == 1
 
-        labels, trimaps, dataset_name, image_name = batch["alpha"], batch[
-            "trimap"], batch["dataset_name"], batch["image_name"]
+        labels, trimaps, dataset_name, image_name, context_image, context_guidance = batch["alpha"], batch[
+            "trimap"], batch["dataset_name"], batch["image_name"], batch["context_image"], batch["context_guidance"]
 
-        output, guidance_map = self.shared_step(batch, batch_idx)
+        output = self.shared_step(batch, batch_idx)
 
         label = labels.squeeze()*255.0
         trimap = trimaps.squeeze()*128
         pred = output.squeeze()*255.0
 
         # for logging
-        guidance_map = guidance_map.squeeze()
-        guidance_map = guidance_map/2.0 if self.guidance_type == "trimap" else guidance_map/1.0
+        guidance_image = context_image*context_guidance
+        guidance_image = guidance_image.squeeze()
         dataset_name = dataset_name[0]
         image_name = image_name[0].split('.')[0]
         image = batch['image'][0]
@@ -155,10 +158,32 @@ class InContextMatting(pl.LightningModule):
                       on_epoch=True, prog_bar=False, sync_dist=True)
 
         self.log_validation_result(
-            image, guidance_map, pred, label, dataset_name, image_name)
+            image, guidance_image, pred, label, dataset_name, image_name)
+        
+    def compute_two_metrics(self, pred, label, trimap, prefix="val"):
+        # compute loss for unknown pixels
+        mse_loss_unknown_ = compute_mse_loss_torch(pred, label, trimap)
+        sad_loss_unknown_ = compute_sad_loss_torch(
+            pred, label, trimap)[0]
 
-    def log_validation_result(self, image, guidance_map, pred, label, dataset_name, image_name):
-        ########### log image, guidance_map, output and gt ###########
+        # compute loss for all pixels
+        trimap = torch.ones_like(label)*128
+
+        mse_loss_all_ = compute_mse_loss_torch(pred, label, trimap)
+        sad_loss_all_ = compute_sad_loss_torch(
+            pred, label, trimap)[0]
+
+        # log validation metrics
+        metrics_unknown = {f'{prefix}/mse_unknown': mse_loss_unknown_,
+                           f'{prefix}/sad_unknown': sad_loss_unknown_, }
+
+        metrics_all = {f'{prefix}/mse_all': mse_loss_all_,
+                       f'{prefix}/sad_all': sad_loss_all_, }
+
+        return metrics_unknown, metrics_all
+    
+    def log_validation_result(self, image, guidance_image, pred, label, dataset_name, image_name):
+        ########### log image, guidance_image, output and gt ###########
         # process image
         image = image.permute(1, 2, 0)
         image = image * torch.tensor([0.229, 0.224, 0.225], device=self.device) + \
@@ -166,14 +191,14 @@ class InContextMatting(pl.LightningModule):
         # clip to [0, 1]
         image = torch.clamp(image, 0, 1)
 
-        # process guidance_map, pred, label
-        guidance_map = torch.stack((guidance_map,)*3, axis=-1)
+        # process guidance_image, pred, label
+        guidance_image = guidance_image.permute(1, 2, 0)
         pred = torch.stack((pred/255.0,)*3, axis=-1)
         label = torch.stack((label/255.0,)*3, axis=-1)
 
-        # concat pred, guidance_map, label, image
+        # concat pred, guidance_image, label, image
         image_to_log = torch.stack(
-            (image, guidance_map, label, pred), axis=0)
+            (image, guidance_image, label, pred), axis=0)
 
         # log image
         self.logger.experiment.add_images(
