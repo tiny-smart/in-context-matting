@@ -58,7 +58,7 @@ model:
         n_heads: 1
         convstream_out: [48, 96, 192]
         fusion_out: [256, 128, 64, 32]
-        use_context: False
+        use_context: True
 
 data:
   target: icm.data.data_module.DataModuleFromConfig

@@ -5,7 +5,7 @@ from icm.util import instantiate_from_config
 import torch
 from pytorch_lightning import Trainer, seed_everything
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 # import tensorboard
 
@@ -18,7 +18,7 @@ def parse_args():
         type=str,
         # "diffusion_matte-train_adapter_params_True-bs_2",
         # "in_context_matting-0.1",
-        default="in_context_matting-0.1_unuse_context",
+        default="in_context_matting-0.1",
     )
     parser.add_argument(
         "--debug",
@@ -72,8 +72,8 @@ if __name__ == '__main__':
     if args.debug:
         cfg_trainer['limit_train_batches'] = 2
         # cfg_trainer['log_every_n_steps'] = 1
-        cfg_trainer['limit_val_batches'] = 3
-        cfg_trainer['overfit_batches'] = 10
+        # cfg_trainer['limit_val_batches'] = 3
+        # cfg_trainer['overfit_batches'] = 10
 
     # init logger
     cfg_logger = cfg_trainer.pop('cfg_logger')

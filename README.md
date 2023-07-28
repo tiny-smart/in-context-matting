@@ -42,3 +42,11 @@ calculate loss and log when bs > 1
 动物分20类 人不分
 一共21类*2
 "PPM", "AM2k_train", "AM2k_val", "RWP636", "P3M_val_np"
+
+# 组合prompt
+组合桌子和椅子对应的prompt
+
+# 当前数据集大多聚焦于自动扣图 图片主题是显著的 不利于学习到语义上下文
+solution:
+1. 分割数据集
+2.training free mask

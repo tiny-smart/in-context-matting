@@ -66,7 +66,8 @@ class ContextDecoder(nn.Module):
             dim=in_chans, n_heads=n_heads, d_head=in_chans, context_dim=in_chans)
         self.detail_capture = Detail_Capture(
             in_chans=in_chans, img_chans=img_chans, convstream_out=convstream_out, fusion_out=fusion_out)
-
+        self.use_context = use_context
+        
     def forward(self, features, context, images):
         h, w = features.shape[-2:]
         

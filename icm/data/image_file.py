@@ -310,6 +310,7 @@ class ContextData():
                 image_info['class'])+'-'+str(image_info['sub_class'])+'-'+str(image_info['HalfOrFull'])
             if class_name not in image_class_dict.keys():
                 image_class_dict[class_name] = {}
+                image_class_dict[class_name][image_name] = image_info['dataset_name']
             else:
                 image_class_dict[class_name][image_name] = image_info['dataset_name']
         return image_class_dict
