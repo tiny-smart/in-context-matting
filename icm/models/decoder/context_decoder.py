@@ -1,12 +1,53 @@
 from einops import rearrange
 from torch import nn
 import torch
-
+import torch.nn.functional as F
+from inspect import isfunction
 from icm.models.decoder.detail_capture import Detail_Capture
 
 from icm.models.attention.attention_sd import MemoryEfficientCrossAttention, CrossAttention, XFORMERS_IS_AVAILBLE
 from torch import nn
 
+def exists(val):
+    return val is not None
+
+
+def default(val, d):
+    if exists(val):
+        return val
+    return d() if isfunction(d) else d
+
+# feedforward
+class GEGLU(nn.Module):
+    def __init__(self, dim_in, dim_out):
+        super().__init__()
+        self.proj = nn.Linear(dim_in, dim_out * 2)
+
+    def forward(self, x):
+        x, gate = self.proj(x).chunk(2, dim=-1)
+        return x * F.gelu(gate)
+
+
+class FeedForward(nn.Module):
+    def __init__(self, dim, dim_out=None, mult=4, glu=False, dropout=0.):
+        super().__init__()
+        inner_dim = int(dim * mult)
+        dim_out = default(dim_out, dim)
+        project_in = nn.Sequential(
+            nn.Linear(dim, inner_dim),
+            nn.GELU()
+        ) if not glu else GEGLU(dim, inner_dim)
+
+        self.net = nn.Sequential(
+            project_in,
+            nn.Dropout(dropout),
+            nn.Linear(inner_dim, dim_out)
+        )
+        
+        self.norm = nn.LayerNorm(dim)
+
+    def forward(self, x):
+        return self.net(self.norm(x))
 
 class ContextTransformerBlock(nn.Module):
     ATTENTION_MODES = {
@@ -44,8 +85,8 @@ class ContextTransformerBlock(nn.Module):
         self.norm1 = nn.LayerNorm(dim)
 
     def forward(self, x, context):
-        # x = self.attn1(self.norm1(x), context=context)+ x
-        x = self.attn1(x, context=context) + x
+        x = self.attn1(self.norm1(x), context=context)+ x
+        # x = self.attn1(x, context=context) + x
 
         return x
 
@@ -69,8 +110,9 @@ class ContextDecoder(nn.Module):
                 dim=in_chans, n_heads=n_heads, d_head=in_chans, context_dim=in_chans)
             for _ in range(2)
         ])
-        ContextTransformerBlock(
-            dim=in_chans, n_heads=n_heads, d_head=in_chans, context_dim=in_chans)
+
+        self.ff = FeedForward(in_chans, dropout=0.0)
+        
         self.detail_capture = Detail_Capture(
             in_chans=in_chans, img_chans=img_chans, convstream_out=convstream_out, fusion_out=fusion_out)
         self.use_context = use_context
@@ -89,6 +131,8 @@ class ContextDecoder(nn.Module):
             context2img = self.context_transformer[0](context, features)
             
             features = self.context_transformer[1](features, context2img)
+            
+            features = self.ff(features)
             
             features = rearrange(
                 features, "b (h w) c -> b c h w", h=h, w=w).contiguous()

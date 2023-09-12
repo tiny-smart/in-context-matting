@@ -2,7 +2,7 @@ model:
   target: icm.models.in_context_matting.InContextMatting
 
   params:
-    learning_rate: 0.001
+    learning_rate: 0.0001
 
     # which layer to use for matting
     feature_index: 6
@@ -55,7 +55,7 @@ model:
       params:
         in_chans: 960
         img_chans: 3
-        n_heads: 1
+        n_heads: 3
         convstream_out: [48, 96, 192]
         fusion_out: [256, 128, 64, 32]
         use_context: True
