@@ -5,7 +5,7 @@ from icm.util import instantiate_from_config
 import torch
 from pytorch_lightning import Trainer, seed_everything
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "2,3"
 
 # import tensorboard
 
@@ -18,7 +18,7 @@ def parse_args():
         type=str,
         # "diffusion_matte-train_adapter_params_True-bs_2",
         # "in_context_matting-0.1",
-        default="in_context_matting-0.1",
+        default="in_context_matting-1.0-2waytransformer",
     )
     parser.add_argument(
         "--debug",

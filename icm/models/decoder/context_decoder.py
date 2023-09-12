@@ -60,20 +60,36 @@ class ContextDecoder(nn.Module):
     '''
 
     def __init__(self, in_chans=960, img_chans=3,
-                 n_heads=1, convstream_out=[48, 96, 192], fusion_out=[256, 128, 64, 32], use_context=True):
+                 n_heads=1, convstream_out=[48, 96, 192], fusion_out=[256, 128, 64, 32], use_context=True, 
+                 # context_as_q=False
+                 ):
         super().__init__()
-        self.context_transformer = ContextTransformerBlock(
+        self.context_transformer = nn.ModuleList([
+            ContextTransformerBlock(
+                dim=in_chans, n_heads=n_heads, d_head=in_chans, context_dim=in_chans)
+            for _ in range(2)
+        ])
+        ContextTransformerBlock(
             dim=in_chans, n_heads=n_heads, d_head=in_chans, context_dim=in_chans)
         self.detail_capture = Detail_Capture(
             in_chans=in_chans, img_chans=img_chans, convstream_out=convstream_out, fusion_out=fusion_out)
         self.use_context = use_context
-        
+        # self.context_as_q = context_as_q
     def forward(self, features, context, images):
+        '''
+        features: [B, C, H, W]
+        context: [B, n, C]
+        '''
         h, w = features.shape[-2:]
         
         if self.use_context:
+        
             features = rearrange(features, "b c h w -> b (h w) c").contiguous()
-            features = self.context_transformer(features, context)
+            
+            context2img = self.context_transformer[0](context, features)
+            
+            features = self.context_transformer[1](features, context2img)
+            
             features = rearrange(
                 features, "b (h w) c -> b c h w", h=h, w=w).contiguous()
             

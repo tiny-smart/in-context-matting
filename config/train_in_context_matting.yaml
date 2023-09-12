@@ -64,7 +64,7 @@ data:
   target: icm.data.data_module.DataModuleFromConfig
   params:
     # train_batch_size is set here, validation_batch_size is 1
-    batch_size: 16
+    batch_size: 8
     # train_loader_num_workers is set here, validation_loader_num_workers is 0
     num_workers: 4
     shuffle_train: False
@@ -93,7 +93,7 @@ data:
 
 trainer:
   accelerator: "ddp"
-  gpus: 1
+  gpus: 2
   max_epochs: 1000
   auto_select_gpus: False
   num_sanity_val_steps: 0

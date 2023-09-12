@@ -110,67 +110,69 @@ dataset = {'AIM', 'PPM', 'AM2k_train', 'AM2k_val',
 
 def get_dir_ext(dataset):
     if dataset == 'AIM':
-        image_dir = '/home/yezixuan/Combined_Dataset/AIM-500/original'
-        label_dir = '/home/yezixuan/Combined_Dataset/AIM-500/mask'
-        trimap_dir = '/home/yezixuan/Combined_Dataset/AIM-500/trimap'
+        
+        image_dir = '/data/guohe/ImageMatting/Combined_Dataset/AIM-500/original'
+        label_dir = '/data/guohe/ImageMatting/Combined_Dataset/AIM-500/mask'
+        trimap_dir = '/data/guohe/ImageMatting/Combined_Dataset/AIM-500/trimap'
 
         merged_ext = '.jpg'
         alpha_ext = '.png'
         trimap_ext = '.png'
 
     elif dataset == 'PPM':
-        image_dir = '/home/yezixuan/Combined_Dataset/PPM-100/image_train'
-        label_dir = '/home/yezixuan/Combined_Dataset/PPM-100/matte_train'
-        trimap_dir = '/home/yezixuan/Combined_Dataset/PPM-100/trimap'
+        image_dir = "/data/guohe/ImageMatting/Combined_Dataset/PPM-100/image_train/"
+        label_dir = "/data/guohe/ImageMatting/Combined_Dataset/PPM-100/matte_train/"
+        trimap_dir = "/data/guohe/ImageMatting/Combined_Dataset/PPM-100/trimap_self_generated/"
 
         merged_ext = '.jpg'
         alpha_ext = '.jpg'
         trimap_ext = '.jpg'
     elif dataset == 'AM2k_train':
-        image_dir = "/data/yezixuan/Combined_Dataset/AM-2k/train/original"
-        label_dir = "/data/yezixuan/Combined_Dataset/AM-2k/train/mask"
-        trimap_dir = "/data/yezixuan/Combined_Dataset/AM-2k/train/trimap"
+        image_dir = "/data/guohe/ImageMatting/Combined_Dataset/AM-2K/train/original"
+        label_dir = "/data/guohe/ImageMatting/Combined_Dataset/AM-2K/train/mask"
+        trimap_dir = "/data/guohe/ImageMatting/Combined_Dataset/AM-2K/train/trimap_self_generated"
 
         merged_ext = '.jpg'
         alpha_ext = '.png'
         trimap_ext = '.png'
 
     elif dataset == 'AM2k_val':
-        image_dir = "/data/yezixuan/Combined_Dataset/AM-2k/validation/original"
-        label_dir = "/data/yezixuan/Combined_Dataset/AM-2k/validation/mask"
-        trimap_dir = "/data/yezixuan/Combined_Dataset/AM-2k/validation/trimap"
+        image_dir = "/data/guohe/ImageMatting/Combined_Dataset/AM-2K/validation/original"
+        label_dir = "/data/guohe/ImageMatting/Combined_Dataset/AM-2K/validation/mask"
+        trimap_dir = "/data/guohe/ImageMatting/Combined_Dataset/AM-2K/validation/trimap"
 
         merged_ext = '.jpg'
         alpha_ext = '.png'
         trimap_ext = '.png'
     elif dataset == 'RWP636':
-        image_dir = '/data/yezixuan/Combined_Dataset/RealWorldPortrait-636/image'
-        label_dir = '/data/yezixuan/Combined_Dataset/RealWorldPortrait-636/alpha'
-        trimap_dir = '/data/yezixuan/Combined_Dataset/RealWorldPortrait-636/trimap'
+        image_dir = '/data/guohe/ImageMatting/Combined_Dataset/RealWorldPortrait-636/image'
+        label_dir = '/data/guohe/ImageMatting/Combined_Dataset/RealWorldPortrait-636/alpha'
+        trimap_dir = '/data/guohe/ImageMatting/Combined_Dataset/RealWorldPortrait-636/trimap'
         merged_ext = '.jpg'
         alpha_ext = '.png'
         trimap_ext = '.png'
     elif dataset == 'P3M_val_np':  # non blurred
-        image_dir = '/data/yezixuan/Combined_Dataset/P3M-10k/validation/P3M-500-NP/original_image'
-        label_dir = '/data/yezixuan/Combined_Dataset/P3M-10k/validation/P3M-500-NP/mask'
-        trimap_dir = '/data/yezixuan/Combined_Dataset/P3M-10k/validation/P3M-500-NP/trimap'
+        image_dir = '/data/guohe/ImageMatting/Combined_Dataset/P3M-10k/validation/P3M-500-NP/original_image'
+        label_dir = '/data/guohe/ImageMatting/Combined_Dataset/P3M-10k/validation/P3M-500-NP/mask'
+        trimap_dir = '/data/guohe/ImageMatting/Combined_Dataset/P3M-10k/validation/P3M-500-NP/trimap'
         merged_ext = '.jpg'
         alpha_ext = '.png'
         trimap_ext = '.png'
     elif dataset == 'P3M_val_p':  # blurred
-        image_dir = '/data/yezixuan/Combined_Dataset/P3M-10k/validation/P3M-500-P/blurred_image'
-        label_dir = '/data/yezixuan/Combined_Dataset/P3M-10k/validation/P3M-500-P/mask'
-        trimap_dir = '/data/yezixuan/Combined_Dataset/P3M-10k/validation/P3M-500-P/trimap'
+        image_dir = '/data/guohe/ImageMatting/Combined_Dataset/P3M-10k/validation/P3M-500-P/blurred_image'
+        label_dir = '/data/guohe/ImageMatting/Combined_Dataset/P3M-10k/validation/P3M-500-P/mask'
+        trimap_dir = '/data/guohe/ImageMatting/Combined_Dataset/P3M-10k/validation/P3M-500-P/trimap'
         merged_ext = '.jpg'
         alpha_ext = '.png'
         trimap_ext = '.png'
-    elif dataset == 'P3M_train':  # blurred
-        image_dir = '/data/yezixuan/Combined_Dataset/P3M-10k/train/blurred_image'
-        label_dir = '/data/yezixuan/Combined_Dataset/P3M-10k/train/mask'
-        trimap_dir = '/data/yezixuan/Combined_Dataset/P3M-10k/train/trimap'
-        merged_ext = '.jpg'
-        alpha_ext = '.png'
-        trimap_ext = '.png'
+    # no trimap
+    # elif dataset == 'P3M_train':  # blurred  
+    #     image_dir = '/data/guohe/ImageMatting/Combined_Dataset/P3M-10k/train/blurred_image'
+    #     label_dir = '/data/guohe/ImageMatting/Combined_Dataset/P3M-10k/train/mask'
+    #     trimap_dir = '/data/guohe/ImageMatting/Combined_Dataset/P3M-10k/train/trimap'
+    #     merged_ext = '.jpg'
+    #     alpha_ext = '.png'
+    #     trimap_ext = '.png'
 
     return image_dir, label_dir, trimap_dir, merged_ext, alpha_ext, trimap_ext
 
