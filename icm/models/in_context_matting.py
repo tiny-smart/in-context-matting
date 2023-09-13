@@ -80,8 +80,8 @@ class InContextMatting(pl.LightningModule):
             # resize context_masks to [B, 1, H/d, W/d]
             context_masks = F.interpolate(context_masks, size=context_feature.shape[2:], mode='nearest')
             # add self.context_embed[0] to pixels where context_masks == 0, add self.context_embed[1] to pixels where context_masks == 1
-            embedding = self.context_embed(context_masks.squeeze().long()).permute(0, 3, 1, 2)
-            context_feature = context_feature + self.context_embed(context_masks.squeeze().long()).permute(0, 3, 1, 2)
+            # embedding = self.context_embed(context_masks.squeeze(1).long()).permute(0, 3, 1, 2)
+            context_feature = context_feature + self.context_embed(context_masks.squeeze(1).long()).permute(0, 3, 1, 2)
             # flatten context_feature
             context_feature = context_feature.reshape(context_feature.shape[0], context_feature.shape[1], -1).permute(0, 2, 1)
         output = self(images, context_feature)
