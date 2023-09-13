@@ -8,7 +8,7 @@ model:
     feature_index: 6
     use_scheduler: True
     train_adapter_params: False
-
+    context_type: "embed" # "embed" or "maskpooling"
     scheduler_config:
       target: icm.lr_scheduler.LambdaLinearScheduler
       params:
@@ -55,7 +55,7 @@ model:
       params:
         in_chans: 960
         img_chans: 3
-        n_heads: 3
+        n_heads: 1
         convstream_out: [48, 96, 192]
         fusion_out: [256, 128, 64, 32]
         use_context: True
@@ -66,7 +66,7 @@ data:
     # train_batch_size is set here, validation_batch_size is 1
     batch_size: 8
     # train_loader_num_workers is set here, validation_loader_num_workers is 0
-    num_workers: 4
+    num_workers: 0
     shuffle_train: False
     train:
       target: icm.data.data_generator.ContextDataset

@@ -5,7 +5,7 @@ from icm.util import instantiate_from_config
 import torch
 from pytorch_lightning import Trainer, seed_everything
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "2,3"
 
 # import tensorboard
 
@@ -18,12 +18,18 @@ def parse_args():
         type=str,
         # "diffusion_matte-train_adapter_params_True-bs_2",
         # "in_context_matting-0.1",
-        default="in_context_matting-1.0-2waytransformer_norm_ff_4lr_3head",
+        default="in_context_matting-1.5-embed",
     )
     parser.add_argument(
         "--debug",
         type=bool,
         default=False,
+    )
+    parser.add_argument(
+        "--resume",
+        type=str,
+        # default='logs/2023-09-12_19-21-22-in_context_matting-1.0-2waytransformer_norm_ff_4lr/checkpoints/10-0.01410-0.03703.ckpt',
+        default=None,
     )
     parser.add_argument(
         "--config",
@@ -49,7 +55,18 @@ def parse_args():
 
 if __name__ == '__main__':
     args = parse_args()
-    cfg = OmegaConf.load(args.config)
+    if args.resume:
+        path = args.resume.split('checkpoints')[0]
+        # get the folder of last version folder
+        all_folder = os.listdir(path)
+        all_folder = [os.path.join(path, folder) for folder in all_folder if 'version' in folder]
+        all_folder.sort()
+        last_version_folder = all_folder[-1]
+        # get the hparams.yaml path
+        hparams_path = os.path.join(last_version_folder, 'hparams.yaml')
+        cfg = OmegaConf.load(hparams_path)
+    else:
+        cfg = OmegaConf.load(args.config)
 
     # set seed
     seed_everything(args.seed)
@@ -78,8 +95,11 @@ if __name__ == '__main__':
     # init logger
     cfg_logger = cfg_trainer.pop('cfg_logger')
 
-    name = datetime.datetime.now().strftime(
-        "%Y-%m-%d_%H-%M-%S")+'-'+args.experiment_name
+    if args.resume:
+        name = args.resume.split('/')[-3]
+    else:
+        name = datetime.datetime.now().strftime(
+            "%Y-%m-%d_%H-%M-%S")+'-'+args.experiment_name
     cfg_logger['params']['save_dir'] = args.logdir
     cfg_logger['params']['name'] = name
     cfg_trainer['logger'] = instantiate_from_config(cfg_logger)
@@ -94,6 +114,9 @@ if __name__ == '__main__':
         callbacks.append(instantiate_from_config(cfg_callbacks[callback_name]))
     cfg_trainer['callbacks'] = callbacks
 
+    if args.resume:
+        cfg_trainer['resume_from_checkpoint'] = args.resume
+    
     # init trainer
     trainer_opt = argparse.Namespace(**cfg_trainer)
     trainer = Trainer.from_argparse_args(trainer_opt)

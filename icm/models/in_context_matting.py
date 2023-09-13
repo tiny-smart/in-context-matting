@@ -22,6 +22,7 @@ class InContextMatting(pl.LightningModule):
         use_scheduler,
         scheduler_config,
         train_adapter_params,
+        context_type = 'maskpooling', # 'maskpooling' or 'embed'
     ):
         super().__init__()
 
@@ -36,11 +37,15 @@ class InContextMatting(pl.LightningModule):
         self.use_scheduler = use_scheduler
         self.scheduler_config = scheduler_config
         self.train_adapter_params = train_adapter_params
+        self.context_type = context_type
         self.criterion = MattingCriterion(
             losses=['unknown_l1_loss', 'known_l1_loss',
                     'loss_pha_laplacian', 'loss_gradient_penalty']
         )
 
+        if self.context_type == 'embed':
+            self.context_embed = nn.Embedding(2, cfg_decoder["params"]['in_chans'])
+            
     def on_train_start(self):
         # set layers to get features
         self.feature_extractor.reset_dim_stride()
@@ -68,9 +73,17 @@ class InContextMatting(pl.LightningModule):
         context_feature = self.feature_extractor({'img': context_images})[
             self.feature_index].detach()
 
-        context_feature = self.context_maskpooling(
-            context_feature, context_masks)
-
+        if self.context_type == 'maskpooling':
+            context_feature = self.context_maskpooling(
+                context_feature, context_masks)
+        elif self.context_type == 'embed':
+            # resize context_masks to [B, 1, H/d, W/d]
+            context_masks = F.interpolate(context_masks, size=context_feature.shape[2:], mode='nearest')
+            # add self.context_embed[0] to pixels where context_masks == 0, add self.context_embed[1] to pixels where context_masks == 1
+            embedding = self.context_embed(context_masks.squeeze().long()).permute(0, 3, 1, 2)
+            context_feature = context_feature + self.context_embed(context_masks.squeeze().long()).permute(0, 3, 1, 2)
+            # flatten context_feature
+            context_feature = context_feature.reshape(context_feature.shape[0], context_feature.shape[1], -1).permute(0, 2, 1)
         output = self(images, context_feature)
 
         return output
