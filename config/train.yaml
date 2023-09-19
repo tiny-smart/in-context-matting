@@ -40,7 +40,7 @@ model:
         # diffusion-matte with sd://v2-1-base, odise with sd://v1-3"(init)
         init_checkpoint: "sd://v2-1-base"
         # if loading is slow, fix the clip model. /home/guohe/anaconda3/envs/icm/lib/python3.9/site-packages/ldm/modules/encoders/modules.py
-        #                         and clip adaptor /data/guohe/diffusion-matting/ICM/icm/models/feature_extractor/modeling/meta_arch/clip.py
+        #                         and clip adaptor /data1/guohe/diffusion-matting/ICM/icm/models/feature_extractor/modeling/meta_arch/clip.py
 
         # "sd://v1-3": ("v1-inference.yaml", (512, 512), (64, 64)),
         # "sd://v1-4": ("v1-inference.yaml", (512, 512), (64, 64)),
