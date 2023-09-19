@@ -169,10 +169,10 @@ class InContextMatting(pl.LightningModule):
                       on_epoch=True, prog_bar=False, sync_dist=True)
         self.log_dict(metrics_all, on_step=False,
                       on_epoch=True, prog_bar=False, sync_dist=True)
-
-        self.log_validation_result(
-            image, guidance_image, pred, label, dataset_name, image_name)
-        
+        if batch_idx%30 == 0:
+            self.log_validation_result(
+                image, guidance_image, pred, label, dataset_name, image_name)
+            
     def compute_two_metrics(self, pred, label, trimap, prefix="val"):
         # compute loss for unknown pixels
         mse_loss_unknown_ = compute_mse_loss_torch(pred, label, trimap)

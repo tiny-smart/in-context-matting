@@ -5,7 +5,7 @@ from icm.util import instantiate_from_config
 import torch
 from pytorch_lightning import Trainer, seed_everything
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "2,3"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
 
 # import tensorboard
 
@@ -18,7 +18,7 @@ def parse_args():
         type=str,
         # "diffusion_matte-train_adapter_params_True-bs_2",
         # "in_context_matting-0.1",
-        default="in_context_matting-1.5-embed",
+        default="in_context_matting-openimages",
     )
     parser.add_argument(
         "--debug",
@@ -29,7 +29,7 @@ def parse_args():
         "--resume",
         type=str,
         # default='logs/2023-09-12_19-21-22-in_context_matting-1.0-2waytransformer_norm_ff_4lr/checkpoints/10-0.01410-0.03703.ckpt',
-        default=None,
+        default="",
     )
     parser.add_argument(
         "--config",

@@ -819,7 +819,8 @@ class ContextDataset(Dataset):
     def get_sample(self, image_name, dataset_name):
         image_dir, label_dir, trimap_dir, merged_ext, alpha_ext, trimap_ext = get_dir_ext(
             dataset_name)
-        image_path = os.path.join(image_dir, image_name + merged_ext)
+        image_path = os.path.join(image_dir, image_name + merged_ext) if 'open-images' not in dataset_name else os.path.join(
+            image_dir, image_name.split('_')[0] + merged_ext)
         label_path = os.path.join(label_dir, image_name + alpha_ext)
         trimap_path = os.path.join(trimap_dir, image_name + trimap_ext)
 
