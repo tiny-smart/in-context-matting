@@ -1,0 +1,19 @@
+data:
+  target: icm.data.data_module.DataModuleFromConfig
+  params:
+    # train_batch_size is set here, validation_batch_size is 1
+    batch_size: 1
+    # train_loader_num_workers is set here, validation_loader_num_workers is 0
+    num_workers: 0
+    shuffle_train: False
+    validation:
+      target: icm.data.data_generator.ContextDataset
+      params:
+        crop_size: 512
+        phase: val
+        data:
+          target: icm.data.image_file.ContextData
+          params:
+            ratio: 0.9
+            dataset_name:
+              ["open-images-test", ] # ["PPM", "AM2k", "RWP636", "P3M_val_np"]

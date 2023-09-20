@@ -35,8 +35,8 @@ class DataModuleFromConfig(pl.LightningDataModule):
         
     def _val_dataloader(self):
         return DataLoader(self.datasets["validation"],
-                           batch_size=1,
-                           # num_workers=self.num_workers,
+                           batch_size=self.batch_size,
+                           num_workers=self.num_workers,
                            )
         
     def prepare_data(self):

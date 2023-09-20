@@ -9,10 +9,12 @@ model:
     use_scheduler: True
     train_adapter_params: False
     context_type: "embed" # "embed" or "maskpooling"
+    loss_type: "smooth_l1" # "smooth_l1" or "vit_matte" or "cross_entropy" or "focal_loss"
+    
     scheduler_config:
       target: icm.lr_scheduler.LambdaLinearScheduler
       params:
-        warm_up_steps: [1] # NOTE for resuming. use 10000 if starting from scratch
+        warm_up_steps: [250] # NOTE for resuming. use 10000 if starting from scratch
         cycle_lengths: [10000000000000]
         f_start: [1.e-6]
         f_max: [1.]
@@ -64,9 +66,9 @@ data:
   target: icm.data.data_module.DataModuleFromConfig
   params:
     # train_batch_size is set here, validation_batch_size is 1
-    batch_size: 8
+    batch_size: 2
     # train_loader_num_workers is set here, validation_loader_num_workers is 0
-    num_workers: 4
+    num_workers: 0
     shuffle_train: False
     train:
       target: icm.data.data_generator.ContextDataset
@@ -78,7 +80,7 @@ data:
           params:
             ratio: 0.9
             dataset_name:
-              ["open-images-test"] # ["PPM", "AM2k", "RWP636", "P3M_val_np"]
+              ["open-images-test", ] # ["PPM", "AM2k", "RWP636", "P3M_val_np"]
     validation:
       target: icm.data.data_generator.ContextDataset
       params:
@@ -93,10 +95,14 @@ data:
 
 trainer:
   accelerator: "ddp"
-  gpus: 4
+  gpus: 2
   max_epochs: 1000
   auto_select_gpus: False
   num_sanity_val_steps: 0
+  plugins:
+    target: pytorch_lightning.plugins.DDPPlugin
+    params:
+      find_unused_parameters: False
   # weights_summary: full
 
   cfg_logger:
