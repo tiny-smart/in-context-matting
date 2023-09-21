@@ -108,7 +108,7 @@ class ContextDecoder(nn.Module):
         self.context_transformer = nn.ModuleList([
             ContextTransformerBlock(
                 dim=in_chans, n_heads=n_heads, d_head=in_chans, context_dim=in_chans)
-            for _ in range(2)
+            for _ in range(1)
         ])
 
         self.ff = FeedForward(in_chans, dropout=0.0)
@@ -128,9 +128,9 @@ class ContextDecoder(nn.Module):
         
             features = rearrange(features, "b c h w -> b (h w) c").contiguous()
             
-            context2img = self.context_transformer[0](context, features)
+            # context2img = self.context_transformer[0](context, features)
             
-            features = self.context_transformer[1](features, context2img)
+            features = self.context_transformer[0](features, context)
             
             features = self.ff(features)
             

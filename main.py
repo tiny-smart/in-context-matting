@@ -19,12 +19,12 @@ def parse_args():
         type=str,
         # "diffusion_matte-train_adapter_params_True-bs_2",
         # "in_context_matting-0.1",
-        default="in_context_matting-openimages-celoss",
+        default="in_context_matting-openimages-l1loss-1waytrans",
     )
     parser.add_argument(
         "--debug",
         type=bool,
-        default=True,
+        default=False,
     )
     parser.add_argument(
         "--resume",
