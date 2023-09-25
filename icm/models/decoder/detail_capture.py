@@ -109,6 +109,7 @@ class Detail_Capture(nn.Module):
         img_chans=4,
         convstream_out = [48, 96, 192],
         fusion_out = [256, 128, 64, 32],
+        
     ):
         super().__init__()
         assert len(fusion_out) == len(convstream_out) + 1
