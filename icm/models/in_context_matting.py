@@ -23,6 +23,7 @@ class InContextMatting(pl.LightningModule):
         use_scheduler,
         scheduler_config,
         train_adapter_params,
+        freeze_transformer=False,
         context_type='maskpooling',  # 'maskpooling' or 'embed'
         loss_type='vit_matte',  # 'vit_matte' or 'smooth_l1'
     ):
@@ -45,6 +46,7 @@ class InContextMatting(pl.LightningModule):
                     'loss_pha_laplacian', 'loss_gradient_penalty']
         )
         self.loss_type = loss_type
+        self.freeze_transformer = freeze_transformer
         if self.context_type == 'embed':
             self.context_embed = nn.Embedding(
                 2, cfg_decoder["params"]['in_chans'])
@@ -278,7 +280,7 @@ class InContextMatting(pl.LightningModule):
 
     def configure_optimizers(self):
         lr = self.learning_rate
-        params = self.in_context_decoder.parameters()
+        params = self.in_context_decoder.parameters() if not self.freeze_transformer else self.in_context_decoder.freeze_transformer()
 
         if self.train_adapter_params:
             params = list(params)

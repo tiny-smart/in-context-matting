@@ -6,7 +6,7 @@ import torch
 from pytorch_lightning import Trainer, seed_everything
 import os
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "2,3,"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
 
 # import tensorboard
 
@@ -31,6 +31,11 @@ def parse_args():
         type=str,
         # default='logs/2023-09-12_19-21-22-in_context_matting-1.0-2waytransformer_norm_ff_4lr/checkpoints/10-0.01410-0.03703.ckpt',
         default="",
+    )
+    parser.add_argument(
+        "--fine_tune",
+        type=bool,
+        default=False,
     )
     parser.add_argument(
         "--config",
@@ -69,6 +74,11 @@ if __name__ == '__main__':
     else:
         cfg = OmegaConf.load(args.config)
 
+    if args.fine_tune:
+        cfg_ft = OmegaConf.load(args.config)
+        # merge cfg and cfg_ft, cfg_ft will overwrite cfg
+        cfg = OmegaConf.merge(cfg, cfg_ft)
+        
     # set seed
     seed_everything(args.seed)
 

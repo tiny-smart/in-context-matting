@@ -181,7 +181,13 @@ def get_dir_ext(dataset):
         merged_ext = '.jpg'
         alpha_ext = '.png'
         trimap_ext = '.png'
-
+    elif dataset == 'open-images-validation':
+        image_dir = '/data1/guohe/diffusion-matting/ICM/datasets/open-images/image/validation'
+        label_dir = '/data1/guohe/diffusion-matting/ICM/datasets/open-images/mask_class/validation'
+        trimap_dir = '/data1/guohe/diffusion-matting/ICM/datasets/open-images/trimap_self_generated/validation'
+        merged_ext = '.jpg'
+        alpha_ext = '.png'
+        trimap_ext = '.png'
     return image_dir, label_dir, trimap_dir, merged_ext, alpha_ext, trimap_ext
 
 
