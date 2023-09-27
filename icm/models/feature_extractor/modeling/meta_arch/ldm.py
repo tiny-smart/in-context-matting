@@ -252,6 +252,7 @@ class LdmExtractor(FeatureExtractor):
         share_noise: bool = True,
         enable_resize: bool = False,
         init_checkpoint: Optional[str] = "sd://v1-3",
+        feature_before_module: bool = True,
     ):
 
         super().__init__()
@@ -259,7 +260,7 @@ class LdmExtractor(FeatureExtractor):
         self.encoder_block_indices = encoder_block_indices
         self.unet_block_indices = unet_block_indices
         self.decoder_block_indices = decoder_block_indices
-
+        self.feature_before_module = feature_before_module
         self.steps = steps
 
         if ldm is not None:
@@ -325,6 +326,7 @@ class LdmExtractor(FeatureExtractor):
         unet_strides = []
         unet_blocks = []
         for idx, block in enumerate(self.ldm.unet.output_blocks):
+            # three upsample blocks in idx=2,5,8
             if idx in self.unet_block_indices:
                 # The first block of TimestepEmbedSequential
                 unet_dims.append(block[0].channels)
@@ -504,9 +506,11 @@ class LdmExtractor(FeatureExtractor):
         h = unet.middle_block(h, emb, context)
         for module in unet.output_blocks:
             h = torch.cat([h, hs.pop()], dim=1)
-            if module in self.unet_blocks:
+            if module in self.unet_blocks and self.feature_before_module:
                 ret_features.append(h.contiguous())
             h = module(h, emb, context)
+            if module in self.unet_blocks and (not self.feature_before_module):
+                ret_features.append(h.contiguous())
         # h = h.type(x.dtype)
         return unet.out(h), ret_features
 
@@ -596,7 +600,11 @@ class LdmExtractor(FeatureExtractor):
                 cond_emb = batched_inputs["cond_emb"][:, i]
             else:
                 cond_emb = None
-
+                
+            if 't' in batched_inputs:
+                assert len(self.steps) == 1
+                t = batched_inputs['t']
+                
             if t < 0:
                 noisy_latent_image = latent_image
                 # use 0 as no noise timestep
@@ -639,8 +647,11 @@ class LdmExtractor(FeatureExtractor):
             for idx in indices:
                 if self.image_preprocess is not None:
                     continue
-                assert image.shape[-2] // self.feature_strides[idx] == features[idx].shape[-2]
-                assert image.shape[-1] // self.feature_strides[idx] == features[idx].shape[-1]
+                # check only work for feature_before_module
+                if self.feature_before_module:
+
+                    assert image.shape[-2] // self.feature_strides[idx] == features[idx].shape[-2]
+                    assert image.shape[-1] // self.feature_strides[idx] == features[idx].shape[-1]
 
         return features
 
@@ -699,6 +710,8 @@ class LdmImplicitCaptionerExtractor(nn.Module):
             )
         if freeze_all_params:
             self._freeze()
+        
+        self.uc = self.ldm_extractor.ldm.ldm.get_learned_conditioning([""])
 
     @property
     def feature_size(self):
@@ -784,3 +797,35 @@ class LdmImplicitCaptionerExtractor(nn.Module):
                 # set requires_grad to True
                 param.requires_grad = True
         return trainable_parameters
+    
+    def forward_for_attention(self, batched_inputs, use_odise_setting=True, prompt=None, t=None):
+        if use_odise_setting:
+            # assert prompt is None and t is None
+            return self(batched_inputs)
+        else:
+            assert prompt is not None and t is not None
+            if prompt == "IMAGE":
+                image = batched_inputs["img"]
+
+                prefix = self.clip.embed_image(image).image_embed
+                prefix_embed = self.clip_project(prefix)
+                batched_inputs["cond_inputs"] = (
+                    self.ldm_extractor.ldm.uncond_inputs +
+                    torch.tanh(self.alpha_cond) * prefix_embed
+                )
+            else:    
+                image = batched_inputs["img"]
+                batched_inputs["cond_inputs"] = self.ldm_extractor.ldm.ldm.get_learned_conditioning(prompt).repeat(image.shape[0], 1, 1)
+            
+            batched_inputs["t"] = t
+            
+            return self.ldm_extractor(batched_inputs)
+    
+    def forward_cut(self, batched_inputs):
+
+  
+        image = batched_inputs["img"]
+        uc = self.uc.to(image.device)
+        batched_inputs["cond_inputs"] = uc.repeat(image.shape[0], 1, 1)
+        
+        return self.ldm_extractor(batched_inputs)

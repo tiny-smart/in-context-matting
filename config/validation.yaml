@@ -10,10 +10,10 @@ data:
       target: icm.data.data_generator.ContextDataset
       params:
         crop_size: 512
-        phase: val
+        phase: train
         data:
           target: icm.data.image_file.ContextData
           params:
             ratio: 0.9
             dataset_name:
-              ["open-images-test", ] # ["PPM", "AM2k", "RWP636", "P3M_val_np"]
+              ["open-images-test","open-images-validation" ] # ["PPM", "AM2k", "RWP636", "P3M_val_np"]

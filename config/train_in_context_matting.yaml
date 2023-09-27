@@ -5,7 +5,7 @@ model:
     learning_rate: 0.0001
 
     # which layer to use for matting
-    feature_index: 6
+    feature_index: 5
     use_scheduler: True
     train_adapter_params: False
     context_type: "embed" # "embed" or "maskpooling"
@@ -24,13 +24,14 @@ model:
       load_odise_params: False # True only if init_ckpt is sd-v1.3
       target: icm.models.feature_extractor.modeling.meta_arch.ldm.LdmImplicitCaptionerExtractor
       params:
+        feature_before_module: False # True: odise  False: DEFT
         encoder_block_indices: [1, 3, 5, 7]
         # 128*512*512 256*256*256 512*128*128 512*64*64
         unet_block_indices: [2, 5, 8, 11]
         # 2560*8*8 1920*16*16 960*32*32 640*64*64
         decoder_block_indices: [2, 5, 8, 11]
         # 512*64*64 512*128*128 256*256*256 128*512*512
-        steps: [0]
+        steps: [261]
         learnable_time_embed: True
         num_timesteps: 1
         clip_model_name: "ViT-L-14-336"
@@ -69,7 +70,7 @@ data:
     # train_batch_size is set here, validation_batch_size is 1
     batch_size: 8
     # train_loader_num_workers is set here, validation_loader_num_workers is 0
-    num_workers: 0
+    num_workers: 8
     shuffle_train: False
     train:
       target: icm.data.data_generator.ContextDataset

@@ -66,7 +66,7 @@ class InContextMatting(pl.LightningModule):
         return items
 
     def forward(self, images, context):
-        x = self.feature_extractor({'img': images})[self.feature_index]
+        x = self.feature_extractor({'img': images})[self.feature_index].detach()
         x = self.in_context_decoder(x, context, images)
 
         return x

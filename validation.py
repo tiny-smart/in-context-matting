@@ -6,7 +6,7 @@ import torch
 from pytorch_lightning import Trainer, seed_everything
 import os
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "2,3,"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,"
 
 # import tensorboard
 
@@ -18,7 +18,7 @@ def parse_args():
         "--checkpoint",
         type=str,
         # default='logs/2023-09-12_19-21-22-in_context_matting-1.0-2waytransformer_norm_ff_4lr/checkpoints/10-0.01410-0.03703.ckpt',
-        default="logs/2023-09-19_23-42-26-in_context_matting-openimages-l1loss/checkpoints/08-0.08115-0.24881.ckpt",
+        default="logs/2023-09-21_23-48-08-in_context_matting-openimages-l1loss-1waytrans-4head-2data/checkpoints/54-0.07293-0.21500.ckpt",
     )
     parser.add_argument(
         "--config",
