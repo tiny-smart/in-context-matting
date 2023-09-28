@@ -57,7 +57,7 @@ model:
       target: icm.models.decoder.context_decoder.ContextDecoder
       params:
         context_type: "embed" # "embed" or "maskpooling"
-        in_chans: 960
+        in_chans: 1280
         img_chans: 3
         n_heads: 1
         convstream_out: [48, 96, 192]

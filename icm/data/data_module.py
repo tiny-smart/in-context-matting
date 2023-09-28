@@ -2,7 +2,12 @@
 import pytorch_lightning as pl
 from icm.util import instantiate_from_config
 from torch.utils.data import DataLoader
-
+import numpy as np
+import torch
+def worker_init_fn(worker_id):                                                          
+    # set numpy random seed with torch.randint so each worker has a different seed
+    np.random.seed(torch.randint(0, 2**32 - 1, size=(1,)).item())
+    
 class DataModuleFromConfig(pl.LightningDataModule):
     def __init__(self, train=None, validation=None, test=None, predict=None, num_workers=None,
                  batch_size=None, shuffle_train=False):
@@ -31,12 +36,14 @@ class DataModuleFromConfig(pl.LightningDataModule):
         return DataLoader(self.datasets["train"],
                            batch_size=self.batch_size,
                            num_workers=self.num_workers,
-                           shuffle=self.shuffle_train,)
+                           shuffle=self.shuffle_train,
+                           worker_init_fn=worker_init_fn,)
         
     def _val_dataloader(self):
         return DataLoader(self.datasets["validation"],
                            batch_size=self.batch_size,
                            num_workers=self.num_workers,
+                           worker_init_fn=worker_init_fn,
                            )
         
     def prepare_data(self):

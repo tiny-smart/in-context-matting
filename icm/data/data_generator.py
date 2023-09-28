@@ -791,7 +791,8 @@ class ContextDataset(Dataset):
         }[phase]
 
     def __getitem__(self, idx):
-
+        cv2.setNumThreads(0)
+        
         image_name, image_info = self.dataset[idx]
 
         # get image sample
@@ -817,6 +818,7 @@ class ContextDataset(Dataset):
         return len(self.dataset)
 
     def get_sample(self, image_name, dataset_name):
+        cv2.setNumThreads(0)
         image_dir, label_dir, trimap_dir, merged_ext, alpha_ext, trimap_ext = get_dir_ext(
             dataset_name)
         image_path = os.path.join(image_dir, image_name + merged_ext) if 'open-images' not in dataset_name else os.path.join(

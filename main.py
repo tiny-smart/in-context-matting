@@ -1,65 +1,72 @@
-import datetime
-import argparse
-from omegaconf import OmegaConf
-from icm.util import instantiate_from_config
-import torch
-from pytorch_lightning import Trainer, seed_everything
-import os
-
-os.environ["CUDA_VISIBLE_DEVICES"] = "2,3"
-
-# import tensorboard
-
-
-def parse_args():
-    parser = argparse.ArgumentParser()
-
-    parser.add_argument(
-        "--experiment_name",
-        type=str,
-        # "diffusion_matte-train_adapter_params_True-bs_2",
-        # "in_context_matting-0.1",
-        default="in_context_matting-openimages-l1loss-1waytrans-kvembed",
-    )
-    parser.add_argument(
-        "--debug",
-        type=bool,
-        default=False,
-    )
-    parser.add_argument(
-        "--resume",
-        type=str,
-        # default='logs/2023-09-12_19-21-22-in_context_matting-1.0-2waytransformer_norm_ff_4lr/checkpoints/10-0.01410-0.03703.ckpt',
-        default="",
-    )
-    parser.add_argument(
-        "--fine_tune",
-        type=bool,
-        default=False,
-    )
-    parser.add_argument(
-        "--config",
-        type=str,
-        # "config/train.yaml"
-        # "config/train_in_context_matting.yaml"
-        default="config/train_in_context_matting.yaml",
-    )
-    parser.add_argument(
-        "--logdir",
-        type=str,
-        default="logs",
-    )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=42,
-    )
-
-    args = parser.parse_args()
-    return args
-
-
 if __name__ == '__main__':
+    import datetime
+    import argparse
+    from omegaconf import OmegaConf
+
+    import os
+    # set OMP_NUM_THREADS=1 and MKL_NUM_THREADS=1
+    os.environ["OMP_NUM_THREADS"] = "1"
+    os.environ["MKL_NUM_THREADS"] = "1"
+    os.environ["NUMEXPR_NUM_THREADS"] = "1"
+    
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
+    from icm.util import instantiate_from_config
+    import torch
+    from pytorch_lightning import Trainer, seed_everything
+    # import tensorboard
+
+
+    def parse_args():
+        parser = argparse.ArgumentParser()
+
+        parser.add_argument(
+            "--experiment_name",
+            type=str,
+            # "diffusion_matte-train_adapter_params_True-bs_2",
+            # "in_context_matting-0.1",
+            default="in_context_matting-openimages-l1loss-1waytrans-kvembed-deft",
+        )
+        parser.add_argument(
+            "--debug",
+            type=bool,
+            default=False,
+        )
+        parser.add_argument(
+            "--resume",
+            type=str,
+            # default='logs/2023-09-12_19-21-22-in_context_matting-1.0-2waytransformer_norm_ff_4lr/checkpoints/10-0.01410-0.03703.ckpt',
+            default="logs/2023-09-27_11-43-30-in_context_matting-openimages-l1loss-1waytrans-kvembed-deft/checkpoints/01-0.07059-0.22562.ckpt",
+        )
+        parser.add_argument(
+            "--fine_tune",
+            type=bool,
+            default=False,
+        )
+        parser.add_argument(
+            "--config",
+            type=str,
+            # "config/train.yaml"
+            # "config/train_in_context_matting.yaml"
+            default="config/train_in_context_matting.yaml",
+        )
+        parser.add_argument(
+            "--logdir",
+            type=str,
+            default="logs",
+        )
+        parser.add_argument(
+            "--seed",
+            type=int,
+            default=42,
+        )
+
+        args = parser.parse_args()
+        return args
+
+    import multiprocessing
+    multiprocessing.set_start_method('spawn')
+    # ... **The all rest code**
+    
     args = parse_args()
     if args.resume:
         path = args.resume.split('checkpoints')[0]

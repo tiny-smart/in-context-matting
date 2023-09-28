@@ -234,6 +234,40 @@ class InContextMatting(pl.LightningModule):
         self.log_validation_result(
             image, guidance_image, pred, label, dataset_name, image_name)
 
+    def test_step(self, batch, batch_idx):
+
+        labels, trimaps, dataset_name, image_name, context_image, context_guidance = batch["alpha"], batch[
+            "trimap"], batch["dataset_name"], batch["image_name"], batch["context_image"], batch["context_guidance"]
+        
+        output = self.shared_step(batch, batch_idx)
+
+        sample_map = torch.zeros_like(trimaps)
+        sample_map[trimaps == 1] = 1
+        if self.loss_type == 'vit_matte':
+            losses = self.criterion(
+                sample_map, {"phas": output}, {"phas": labels})
+        elif self.loss_type == 'smooth_l1':
+            losses = F.smooth_l1_loss(output, labels, reduction='none')
+            losses = {'smooth_l1_loss': losses.mean()}
+        elif self.loss_type == 'cross_entropy':
+            losses = F.binary_cross_entropy_with_logits(output, labels)
+            losses = {'cross_entropy': losses.mean()}
+        elif self.loss_type == 'focal_loss':
+            losses = focal_loss.sigmoid_focal_loss(output, labels)
+            losses = {'focal_loss': losses.mean()}
+        # log training loss
+
+        # add prefix 'train' to the keys
+        losses = {f"val/{key}": losses.get(key) for key in losses}
+
+        # init loss tensor
+        loss = torch.zeros(1).type_as(labels)
+
+        for key in losses:
+            loss += losses[key]
+
+        return output, loss
+    
     def compute_two_metrics(self, pred, label, trimap, prefix="val"):
         # compute loss for unknown pixels
         mse_loss_unknown_ = compute_mse_loss_torch(pred, label, trimap)
