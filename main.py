@@ -5,11 +5,11 @@ if __name__ == '__main__':
 
     import os
     # set OMP_NUM_THREADS=1 and MKL_NUM_THREADS=1
-    os.environ["OMP_NUM_THREADS"] = "1"
-    os.environ["MKL_NUM_THREADS"] = "1"
-    os.environ["NUMEXPR_NUM_THREADS"] = "1"
+    # os.environ["OMP_NUM_THREADS"] = "1"
+    # os.environ["MKL_NUM_THREADS"] = "1"
+    # os.environ["NUMEXPR_NUM_THREADS"] = "1"
     
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
     from icm.util import instantiate_from_config
     import torch
     from pytorch_lightning import Trainer, seed_everything
@@ -24,7 +24,7 @@ if __name__ == '__main__':
             type=str,
             # "diffusion_matte-train_adapter_params_True-bs_2",
             # "in_context_matting-0.1",
-            default="in_context_matting-openimages-l1loss-1waytrans-kvembed-deft",
+            default="in_context_matting-openimages-l1loss-1waytrans-kvembed-deft-3data",
         )
         parser.add_argument(
             "--debug",
@@ -35,7 +35,8 @@ if __name__ == '__main__':
             "--resume",
             type=str,
             # default='logs/2023-09-12_19-21-22-in_context_matting-1.0-2waytransformer_norm_ff_4lr/checkpoints/10-0.01410-0.03703.ckpt',
-            default="logs/2023-09-27_11-43-30-in_context_matting-openimages-l1loss-1waytrans-kvembed-deft/checkpoints/01-0.07059-0.22562.ckpt",
+            # default="logs/2023-09-27_11-43-30-in_context_matting-openimages-l1loss-1waytrans-kvembed-deft/checkpoints/01-0.07059-0.22562.ckpt",
+            default="",
         )
         parser.add_argument(
             "--fine_tune",

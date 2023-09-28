@@ -14,18 +14,23 @@ from torchvision.ops import focal_loss
 
 
 class InContextMatting(pl.LightningModule):
+    '''
+    In Context Matting Model
+    consists of a feature extractor and a decoder
+    
+    '''
     def __init__(
         self,
         cfg_feature_extractor,
         cfg_decoder,
-        feature_index,
+        feature_index, # move to feature extrctor
         learning_rate,
         use_scheduler,
         scheduler_config,
-        train_adapter_params,
-        freeze_transformer=False,
+        train_adapter_params, # move to feature extrctor
+        freeze_transformer=False, # move to subclass
         context_type='maskpooling',  # unused, move to cfg_decoder
-        loss_type='vit_matte',  # 'vit_matte' or 'smooth_l1'
+        loss_type='vit_matte',  # new class for loss, 'vit_matte' or 'smooth_l1'
     ):
         super().__init__()
 
@@ -66,7 +71,7 @@ class InContextMatting(pl.LightningModule):
         return items
 
     def forward(self, images, context):
-        x = self.feature_extractor({'img': images})[self.feature_index].detach()
+        x = self.feature_extractor.forward_cut({'img': images})[self.feature_index].detach()
         x = self.in_context_decoder(x, context, images)
 
         return x
@@ -75,7 +80,7 @@ class InContextMatting(pl.LightningModule):
         context_images, context_masks, images = batch[
             "context_image"], batch["context_guidance"], batch["image"]
 
-        context_feature = self.feature_extractor({'img': context_images})[
+        context_feature = self.feature_extractor.forward_cut({'img': context_images})[
             self.feature_index].detach()
 
         # if self.context_type == 'maskpooling':
@@ -238,7 +243,7 @@ class InContextMatting(pl.LightningModule):
 
         labels, trimaps, dataset_name, image_name, context_image, context_guidance = batch["alpha"], batch[
             "trimap"], batch["dataset_name"], batch["image_name"], batch["context_image"], batch["context_guidance"]
-        
+
         output = self.shared_step(batch, batch_idx)
 
         sample_map = torch.zeros_like(trimaps)

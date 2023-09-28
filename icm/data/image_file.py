@@ -188,8 +188,15 @@ def get_dir_ext(dataset):
         merged_ext = '.jpg'
         alpha_ext = '.png'
         trimap_ext = '.png'
-    return image_dir, label_dir, trimap_dir, merged_ext, alpha_ext, trimap_ext
 
+    elif dataset == 'open-images-train_0':
+        image_dir = '/data1/guohe/diffusion-matting/ICM/datasets/open-images/image/train/train_0'
+        label_dir = '/data1/guohe/diffusion-matting/ICM/datasets/open-images/mask_class/train/train_0'
+        trimap_dir = '/data1/guohe/diffusion-matting/ICM/datasets/open-images/trimap_self_generated/train/train_0'
+        merged_ext = '.jpg'
+        alpha_ext = '.png'
+        trimap_ext = '.png'
+    return image_dir, label_dir, trimap_dir, merged_ext, alpha_ext, trimap_ext
 
 class MultiImageFile(object):
     def __init__(self):
