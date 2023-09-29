@@ -769,7 +769,7 @@ class ContextDataset(Dataset):
         for key, value in self.image_class_dict.items():
             self.image_class_dict[key] = list(value.items())
         self.dataset = list(self.dataset.items())
-        
+
         train_trans = [
             # RandomAffine(degrees=30, scale=[0.8, 1.25], shear=10, flip=0.5),
 
@@ -792,7 +792,7 @@ class ContextDataset(Dataset):
 
     def __getitem__(self, idx):
         cv2.setNumThreads(0)
-        
+
         image_name, image_info = self.dataset[idx]
 
         # get image sample
@@ -802,15 +802,15 @@ class ContextDataset(Dataset):
         # get context image
         class_name = str(
             image_info['class'])+'-'+str(image_info['sub_class'])+'-'+str(image_info['HalfOrFull'])
-        (context_image_name, context_dataset_name) = self.image_class_dict[class_name][np.random.randint(
+        (reference_image_name, context_dataset_name) = self.image_class_dict[class_name][np.random.randint(
             len(self.image_class_dict[class_name]))]
-        context_image_sample = self.get_sample(
-            context_image_name, context_dataset_name)
+        reference_image_sample = self.get_sample(
+            reference_image_name, context_dataset_name)
 
         # merge image and context
-        image_sample['context_image'] = context_image_sample['image']
-        image_sample['context_guidance'] = context_image_sample['alpha']
-        image_sample['context_image_name'] = context_image_sample['image_name']
+        image_sample['reference_image'] = reference_image_sample['source_image']
+        image_sample['guidance_on_reference_image'] = reference_image_sample['alpha']
+        image_sample['reference_image_name'] = reference_image_sample['image_name']
 
         return image_sample
 
@@ -836,4 +836,9 @@ class ContextDataset(Dataset):
                   'mask': mask, 'image_name': image_name, 'alpha_shape': alpha.shape, 'dataset_name': dataset_name}
 
         sample = self.transform(sample)
+        
+        # modify 'image' to 'source_image'
+        sample['source_image'] = sample['image']
+        del sample['image']
+        
         return sample

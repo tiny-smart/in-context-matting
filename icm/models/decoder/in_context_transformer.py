@@ -36,37 +36,38 @@ class OneWayAttentionBlock(nn.Module):
             self.norm3 = nn.LayerNorm(dim)
         if contet_type == 'embed':
             self.context_embed = nn.Embedding(2, dim)
-            
+
         self.context_type = contet_type
 
     def forward(self, x, context):
         # k: fg-src, bg-sec+bg_embedding
         # v: fg-src+fg_embedding, bg-sec+bg_embedding
         context_feat = context['feature']
-        context_masks = context['mask']
-        
+        guidance_on_reference_image = context['mask']
+
         if self.context_type == 'embed':
             # compute context_v
             context_v = context_feat + \
-                self.context_embed(context_masks.squeeze(
+                self.context_embed(guidance_on_reference_image.squeeze(
                     1).long()).permute(0, 3, 1, 2)
             context_v = context_v.reshape(
-                context_v.shape[0], context_v.shape[1], -1).permute(0, 2, 1) 
-            
+                context_v.shape[0], context_v.shape[1], -1).permute(0, 2, 1)
+
             # compute context_k
-            
-            embedding_k = torch.matmul((1.0-context_masks.squeeze(1).unsqueeze(3).long()),self.context_embed.weight[0].unsqueeze(0))
-            
+
+            embedding_k = torch.matmul((1.0-guidance_on_reference_image.squeeze(
+                1).unsqueeze(3).long()), self.context_embed.weight[0].unsqueeze(0))
+
             context_k = context_feat + embedding_k.permute(0, 3, 1, 2)
             context_k = context_k.reshape(
-                context_k.shape[0], context_k.shape[1], -1).permute(0, 2, 1)        
+                context_k.shape[0], context_k.shape[1], -1).permute(0, 2, 1)
         else:
             # navie attention
             context_k = context_feat.permute(0, 3, 1, 2).reshape(
                 context_feat.shape[0], context_feat.shape[1], -1).permute(0, 2, 1)
             context_v = context_k
-            
-        x = self.attn(q=x, k=context_k, v=context_v) + x 
+
+        x = self.attn(q=x, k=context_k, v=context_v) + x
         x = self.norm1(x)
         x = self.mlp(x) + x
         x = self.norm2(x)
@@ -203,72 +204,3 @@ class ContextTransformerBlock(nn.Module):
     def forward(self, x, context):
         x = self.attn(x, context=context)
         return x
-
-
-class ContextDecoder(nn.Module):
-    '''
-    Naive ContextDecoder:
-    Based on single scale version of diffusion_matting, 
-    it uses the context transformer to fuse the context information into the feature,
-    image feature as q, context information as k, v,
-    and then use the detail capture to get the final result. 
-    '''
-
-    def __init__(self, 
-                 in_chans=960, 
-                 img_chans=3,
-                 n_heads=1, 
-                 convstream_out=[48, 96, 192], 
-                 fusion_out=[256, 128, 64, 32], 
-                 use_context=True,
-                 context_type='embed', # 'embed' 
-                 # context_as_q=False
-                 ):
-        super().__init__()
-        self.context_transformer = ContextTransformerBlock(
-            dim=in_chans, n_heads=n_heads, d_head=in_chans, context_dim=in_chans, context_type=context_type)
-
-        self.detail_capture = Detail_Capture(
-            in_chans=in_chans, img_chans=img_chans, convstream_out=convstream_out, fusion_out=fusion_out)
-        self.use_context = use_context
-
-    def forward(self, features, context, images):
-        '''
-        features: [B, C, H, W]
-        context: {'feature" : [B, C, H, W], "mask": [B, 1, H, W]}
-        '''
-        h, w = features.shape[-2:]
-
-        if self.use_context:
-
-            features = rearrange(features, "b c h w -> b (h w) c").contiguous()
-
-            features = self.context_transformer(features, context)
-
-            features = rearrange(
-                features, "b (h w) c -> b c h w", h=h, w=w).contiguous()
-
-        features = self.detail_capture(features, images)
-
-        return features
-
-    def freeze_transformer(self):
-        '''
-        freeze context transformer and return trainable param
-        '''
-        for param in self.context_transformer.parameters():
-            param.requires_grad = False
-        return self.detail_capture.parameters()
-
-
-if __name__ == '__main__':
-    # test
-    model = ContextDecoder()
-    # print(model)
-    feature = torch.randn(2, 960, 32, 32)
-
-    img = torch.randn(2, 3, 512, 512)
-
-    out = model(feature, img)
-
-    print(0)

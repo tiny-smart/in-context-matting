@@ -1,8 +1,4 @@
-from typing import Any, Optional
-from pytorch_lightning.utilities.types import STEP_OUTPUT
-from torch import nn
-from torch.optim.optimizer import Optimizer
-from icm.models.criterion.matting_criterion import MattingCriterion
+
 from icm.models.criterion.matting_criterion_eval import compute_mse_loss, compute_sad_loss, compute_connectivity_error, compute_gradient_loss, compute_mse_loss_torch, compute_sad_loss_torch
 from icm.util import instantiate_from_config, instantiate_feature_extractor
 import pytorch_lightning as pl
@@ -16,208 +12,180 @@ from torchvision.ops import focal_loss
 class InContextMatting(pl.LightningModule):
     '''
     In Context Matting Model
-    consists of a feature extractor and a decoder
+    consists of a feature extractor and a in-context decoder
     train model with lr, scheduler, loss
-    '''
+
+
+    feature extractor: # feature_index, 
+        list get_trainable_params()  # train_adapter_params
+        reset_dim_stride() # reset dim and stride of layers to get features
+        get_reference_feature get_source_feature(tensor) :detach()
+    in-context decoder: # context_type='maskpooling'
+        list get_trainable_params() # freeze_transformer
+        forward(source, reference)
+                reference = {'feature': feature_of_reference_image,
+                     'guidance': guidance_on_reference_image}
+
+        source = {'feature': feature_of_source_image, 'image': source_images}
+
+        x = self.in_context_decoder(source, reference)
+
+                # if self.context_type == 'maskpooling':
+        #     feature_of_reference_image = self.context_maskpooling(
+        #         feature_of_reference_image, guidance_on_reference_image)
+        # elif self.context_type == 'embed':
+        #     # resize guidance_on_reference_image to [B, 1, H/d, W/d]
+        #     guidance_on_reference_image = F.interpolate(
+        #         guidance_on_reference_image, size=feature_of_reference_image.shape[2:], mode='nearest')
+        #     # add self.context_embed[0] to pixels where guidance_on_reference_image == 0, add self.context_embed[1] to pixels where guidance_on_reference_image == 1
+        #     # embedding = self.context_embed(guidance_on_reference_image.squeeze(1).long()).permute(0, 3, 1, 2)
+        #     feature_of_reference_image = feature_of_reference_image + \
+        #         self.context_embed(guidance_on_reference_image.squeeze(
+        #             1).long()).permute(0, 3, 1, 2)
+        #     # flatten feature_of_reference_image
+        #     feature_of_reference_image = feature_of_reference_image.reshape(
+        #         feature_of_reference_image.shape[0], feature_of_reference_image.shape[1], -1).permute(0, 2, 1)
+        # resize guidance_on_reference_image to [B, 1, H/d, W/d]
+
+        guidance_on_reference_image = F.interpolate(
+            guidance_on_reference_image, size=feature_of_reference_image.shape[2:], mode='nearest')
+
+
+    # # unused, move to context_decoder
+    # def context_maskpooling(self, feature, mask):
+    #     '''
+    #     get context feature tokens by maskpooling
+    #     feature: [B, C, H/d, W/d]
+    #     mask: [B, 1, H, W]  [0,1]
+    #     return: [B, token_num, C] token_num = H*W/d^2
+    #     '''
+    #     mask[mask < 1] = 0
+    #     mask = -1 * mask
+    #     kernel_size = mask.shape[2] // feature.shape[2]
+    #     mask = F.max_pool2d(mask, kernel_size=kernel_size,
+    #                         stride=kernel_size, padding=0)
+    #     mask = -1*mask
+
+    #     feature = mask*feature
+    #     feature = feature.reshape(
+    #         feature.shape[0], feature.shape[1], -1).permute(0, 2, 1)
+
+    #     return feature
+
+    # loss_function: # loss_type='vit_matte'
+    #         # self.criterion = MattingCriterion(
+    #     #     losses=['unknown_l1_loss', 'known_l1_loss',
+    #     #             'loss_pha_laplacian', 'loss_gradient_penalty']
+    #     # )
+    # '''
+    #     if self.loss_type == 'vit_matte':
+    #     losses = self.criterion(
+    #         sample_map, {"phas": output}, {"phas": labels})
+    # elif self.loss_type == 'smooth_l1':
+    #     losses = F.smooth_l1_loss(output, labels, reduction='none')
+    #     losses = {'smooth_l1_loss': losses.mean()}
+    # elif self.loss_type == 'cross_entropy':
+    #     losses = F.binary_cross_entropy_with_logits(output, labels)
+    #     losses = {'cross_entropy': losses.mean()}
+    # elif self.loss_type == 'focal_loss':
+    #     losses = focal_loss.sigmoid_focal_loss(output, labels)
+    #     losses = {'focal_loss': losses.mean()}
+
     def __init__(
         self,
         cfg_feature_extractor,
-        cfg_decoder,
-        feature_index, # move to feature extrctor
-        learning_rate, 
-        use_scheduler, # delet
+        cfg_in_context_decoder,
+        cfg_loss_function,
+        learning_rate,
         cfg_scheduler=None,
-        train_adapter_params, # move to feature extrctor
-        freeze_transformer=False, # move to subclass
-        context_type='maskpooling',  # unused, move to cfg_decoder
-        
-        loss_type='vit_matte',  # new class for loss, 'vit_matte' or 'smooth_l1'
-        cfg_loss=None, # new class for loss
     ):
         super().__init__()
 
-        # init model, move to configure_shared_model, move back to init
         self.feature_extractor = instantiate_feature_extractor(
             cfg_feature_extractor)
+        self.in_context_decoder = instantiate_from_config(
+            cfg_in_context_decoder)
 
-        self.in_context_decoder = instantiate_from_config(cfg_decoder)
+        self.loss_function = instantiate_from_config(cfg_loss_function)
 
-        
         self.learning_rate = learning_rate
-
         self.cfg_scheduler = cfg_scheduler
-
-        self.loss_function = instantiate_from_config(cfg_loss)
-        # self.criterion = MattingCriterion(
-        #     losses=['unknown_l1_loss', 'known_l1_loss',
-        #             'loss_pha_laplacian', 'loss_gradient_penalty']
-        # )
-
 
     def on_train_start(self):
         # set layers to get features
         self.feature_extractor.reset_dim_stride()
 
-    def on_train_epoch_start(self, unused=None):
+    def on_train_epoch_start(self):
         self.log("epoch", self.current_epoch, on_step=False,
                  on_epoch=True, prog_bar=False, sync_dist=True)
 
-    def get_progress_bar_dict(self):
-        # don't show the version number
-        items = super().get_progress_bar_dict()
-        items.pop("v_num", None)
-        return items
+    def forward(self, reference_images, guidance_on_reference_image, source_images):
 
-    def forward(self, images, context):
-        x = self.feature_extractor.forward_cut({'img': images})[self.feature_index].detach()
-        x = self.in_context_decoder(x, context, images)
+        feature_of_reference_image = self.feature_extractor.get_reference_feature(
+            reference_images)
 
-        return x
+        feature_of_source_image = self.feature_extractor.get_source_feature(
+            source_images)
 
-    def shared_step(self, batch, batch_idx):
-        context_images, context_masks, images = batch[
-            "context_image"], batch["context_guidance"], batch["image"]
+        reference = {'feature': feature_of_reference_image,
+                     'guidance': guidance_on_reference_image}
 
-        context_feature = self.feature_extractor.forward_cut({'img': context_images})[
-            self.feature_index].detach()
+        source = {'feature': feature_of_source_image, 'image': source_images}
 
-        # if self.context_type == 'maskpooling':
-        #     context_feature = self.context_maskpooling(
-        #         context_feature, context_masks)
-        # elif self.context_type == 'embed':
-        #     # resize context_masks to [B, 1, H/d, W/d]
-        #     context_masks = F.interpolate(
-        #         context_masks, size=context_feature.shape[2:], mode='nearest')
-        #     # add self.context_embed[0] to pixels where context_masks == 0, add self.context_embed[1] to pixels where context_masks == 1
-        #     # embedding = self.context_embed(context_masks.squeeze(1).long()).permute(0, 3, 1, 2)
-        #     context_feature = context_feature + \
-        #         self.context_embed(context_masks.squeeze(
-        #             1).long()).permute(0, 3, 1, 2)
-        #     # flatten context_feature
-        #     context_feature = context_feature.reshape(
-        #         context_feature.shape[0], context_feature.shape[1], -1).permute(0, 2, 1)
-        # resize context_masks to [B, 1, H/d, W/d]
-        context_masks = F.interpolate(
-            context_masks, size=context_feature.shape[2:], mode='nearest')
-        context = {'feature': context_feature, 'mask': context_masks}
-        output = self(images, context)
+        output = self.in_context_decoder(source, reference)
 
         return output
 
-    # unused, move to context_decoder
-    def context_maskpooling(self, feature, mask):
-        '''
-        get context feature tokens by maskpooling
-        feature: [B, C, H/d, W/d]
-        mask: [B, 1, H, W]  [0,1]
-        return: [B, token_num, C] token_num = H*W/d^2
-        '''
-        mask[mask < 1] = 0
-        mask = -1 * mask
-        kernel_size = mask.shape[2] // feature.shape[2]
-        mask = F.max_pool2d(mask, kernel_size=kernel_size,
-                            stride=kernel_size, padding=0)
-        mask = -1*mask
+    def __shared_step(self, batch):
+        reference_images, guidance_on_reference_image, source_images, labels, trimaps = batch[
+            "reference_image"], batch["guidance_on_reference_image"], batch["source_image"], batch["alpha"], batch["trimap"]
 
-        feature = mask*feature
-        feature = feature.reshape(
-            feature.shape[0], feature.shape[1], -1).permute(0, 2, 1)
+        outputs = self(reference_images,
+                       guidance_on_reference_image, source_images)
 
-        return feature
+        loss_dict = self.loss_function(outputs, labels, trimaps)
+
+        loss = sum(loss_dict.values())
+        
+        return loss_dict, loss, outputs
+
+    def __log_loss(self, loss_dict, loss, prefix):
+        loss_dict = {f"{prefix}/{key}": loss_dict.get(key) for key in loss_dict}
+        self.log_dict(loss_dict, on_step=True, on_epoch=True,
+                      prog_bar=False, sync_dist=True)
+        self.log(f"{prefix}/loss", loss, on_step=True,
+                 on_epoch=True, prog_bar=True, sync_dist=True)
 
     def training_step(self, batch, batch_idx):
-        labels, trimaps = batch["alpha"], batch["trimap"]
-        output = self.shared_step(batch, batch_idx)
+        loss_dict, loss, _ = self.__shared_step(batch)
 
-        sample_map = torch.zeros_like(trimaps)
-        sample_map[trimaps == 1] = 1
-        if self.loss_type == 'vit_matte':
-            losses = self.criterion(
-                sample_map, {"phas": output}, {"phas": labels})
-        elif self.loss_type == 'smooth_l1':
-            losses = F.smooth_l1_loss(output, labels, reduction='none')
-            losses = {'smooth_l1_loss': losses.mean()}
-        elif self.loss_type == 'cross_entropy':
-            losses = F.binary_cross_entropy_with_logits(output, labels)
-            losses = {'cross_entropy': losses.mean()}
-        elif self.loss_type == 'focal_loss':
-            losses = focal_loss.sigmoid_focal_loss(output, labels)
-            losses = {'focal_loss': losses.mean()}
-        # log training loss
-
-        # add prefix 'train' to the keys
-        losses = {f"train/{key}": losses.get(key) for key in losses}
-
-        self.log_dict(losses, on_step=True, on_epoch=True,
-                      prog_bar=False, sync_dist=True)
-
+        self.__log_loss(loss_dict, loss, "train")
+        
         # log learning rate
         self.log("lr", self.trainer.optimizers[0].param_groups[0]
                  ["lr"], on_step=True, on_epoch=False, prog_bar=True, sync_dist=True)
 
-        # init loss tensor
-        loss = torch.zeros(1).type_as(labels)
-
-        for key in losses:
-            loss += losses[key]
-
-        self.log("train/loss", loss, on_step=True,
-                 on_epoch=True, prog_bar=True, sync_dist=True)
-
         return loss
 
     def validation_step(self, batch, batch_idx):
+        loss_dict, loss, preds = self.__shared_step(batch)
 
-        labels, trimaps, dataset_name, image_name, context_image, context_guidance = batch["alpha"], batch[
-            "trimap"], batch["dataset_name"], batch["image_name"], batch["context_image"], batch["context_guidance"]
+        self.__log_loss(loss_dict, loss, "val")
 
-        output = self.shared_step(batch, batch_idx)
-
-        sample_map = torch.zeros_like(trimaps)
-        sample_map[trimaps == 1] = 1
-        if self.loss_type == 'vit_matte':
-            losses = self.criterion(
-                sample_map, {"phas": output}, {"phas": labels})
-        elif self.loss_type == 'smooth_l1':
-            losses = F.smooth_l1_loss(output, labels, reduction='none')
-            losses = {'smooth_l1_loss': losses.mean()}
-        elif self.loss_type == 'cross_entropy':
-            losses = F.binary_cross_entropy_with_logits(output, labels)
-            losses = {'cross_entropy': losses.mean()}
-        elif self.loss_type == 'focal_loss':
-            losses = focal_loss.sigmoid_focal_loss(output, labels)
-            losses = {'focal_loss': losses.mean()}
-        # log training loss
-
-        # add prefix 'train' to the keys
-        losses = {f"val/{key}": losses.get(key) for key in losses}
-
-        self.log_dict(losses, on_step=True, on_epoch=True,
-                      prog_bar=False, sync_dist=True)
-
-        # init loss tensor
-        loss = torch.zeros(1).type_as(labels)
-
-        for key in losses:
-            loss += losses[key]
-
-        self.log("val/loss", loss, on_step=True,
-                 on_epoch=True, prog_bar=True, sync_dist=True)
-
-        return output, batch
+        return preds, batch
 
     def validation_step_end(self, outputs):
 
         output, batch = outputs
-        labels, trimaps, dataset_name, image_name, context_image, context_guidance = batch["alpha"][0].unsqueeze(0), batch[
-            "trimap"][0].unsqueeze(0), batch["dataset_name"], batch["image_name"], batch["context_image"][0].unsqueeze(0), batch["context_guidance"][0].unsqueeze(0)
+        labels, trimaps, dataset_name, image_name, reference_image, guidance_on_reference_image = batch["alpha"][0].unsqueeze(0), batch[
+            "trimap"][0].unsqueeze(0), batch["dataset_name"], batch["image_name"], batch["reference_image"][0].unsqueeze(0), batch["guidance_on_reference_image"][0].unsqueeze(0)
 
         label = labels.squeeze()*255.0
         trimap = trimaps.squeeze()*128
         pred = output[0].squeeze()*255.0
 
         # for logging
-        guidance_image = context_image*context_guidance
+        guidance_image = reference_image*guidance_on_reference_image
         guidance_image = guidance_image.squeeze()
         dataset_name = dataset_name[0]
         image_name = image_name[0].split('.')[0]
@@ -238,39 +206,10 @@ class InContextMatting(pl.LightningModule):
             image, guidance_image, pred, label, dataset_name, image_name)
 
     def test_step(self, batch, batch_idx):
+        loss_dict, loss, preds = self.__shared_step(batch)
 
-        labels, trimaps, dataset_name, image_name, context_image, context_guidance = batch["alpha"], batch[
-            "trimap"], batch["dataset_name"], batch["image_name"], batch["context_image"], batch["context_guidance"]
+        return preds, loss
 
-        output = self.shared_step(batch, batch_idx)
-
-        sample_map = torch.zeros_like(trimaps)
-        sample_map[trimaps == 1] = 1
-        if self.loss_type == 'vit_matte':
-            losses = self.criterion(
-                sample_map, {"phas": output}, {"phas": labels})
-        elif self.loss_type == 'smooth_l1':
-            losses = F.smooth_l1_loss(output, labels, reduction='none')
-            losses = {'smooth_l1_loss': losses.mean()}
-        elif self.loss_type == 'cross_entropy':
-            losses = F.binary_cross_entropy_with_logits(output, labels)
-            losses = {'cross_entropy': losses.mean()}
-        elif self.loss_type == 'focal_loss':
-            losses = focal_loss.sigmoid_focal_loss(output, labels)
-            losses = {'focal_loss': losses.mean()}
-        # log training loss
-
-        # add prefix 'train' to the keys
-        losses = {f"val/{key}": losses.get(key) for key in losses}
-
-        # init loss tensor
-        loss = torch.zeros(1).type_as(labels)
-
-        for key in losses:
-            loss += losses[key]
-
-        return output, loss
-    
     def compute_two_metrics(self, pred, label, trimap, prefix="val"):
         # compute loss for unknown pixels
         mse_loss_unknown_ = compute_mse_loss_torch(pred, label, trimap)
@@ -325,23 +264,24 @@ class InContextMatting(pl.LightningModule):
         opt = torch.optim.Adam(params, lr=self.learning_rate)
 
         if self.cfg_scheduler is not None:
-            scheduler = instantiate_from_config(self.cfg_scheduler)
-            scheduler = [
-                {
-                    "scheduler": LambdaLR(opt, lr_lambda=scheduler.schedule),
-                    "interval": "step",
-                    "frequency": 1,
-                }
-            ]
-            return [opt], scheduler
+            scheduler = self.__get_scheduler(opt)
+            opt = [opt]
+            return opt, scheduler
         return opt
-    
-    def __get_trainable_params(self):
-        
-        params = self.in_context_decoder.parameters() if not self.freeze_transformer else self.in_context_decoder.freeze_transformer()
 
-        if self.train_adapter_params:
-            params = list(params)
-            adapter_params = self.feature_extractor.get_trainable_params()
-            params = params + adapter_params
+    def __get_trainable_params(self):
+        params = []
+        params = params + self.in_context_decoder.get_trainable_params() + \
+            self.feature_extractor.get_trainable_params()
         return params
+
+    def __get_scheduler(self, opt):
+        scheduler = instantiate_from_config(self.cfg_scheduler)
+        scheduler = [
+            {
+                "scheduler": LambdaLR(opt, lr_lambda=scheduler.schedule),
+                "interval": "step",
+                "frequency": 1,
+            }
+        ]
+        return scheduler
