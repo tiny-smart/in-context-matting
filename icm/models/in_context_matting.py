@@ -17,20 +17,22 @@ class InContextMatting(pl.LightningModule):
     '''
     In Context Matting Model
     consists of a feature extractor and a decoder
-    
+    train model with lr, scheduler, loss
     '''
     def __init__(
         self,
         cfg_feature_extractor,
         cfg_decoder,
         feature_index, # move to feature extrctor
-        learning_rate,
-        use_scheduler,
-        scheduler_config,
+        learning_rate, 
+        use_scheduler, # delet
+        cfg_scheduler=None,
         train_adapter_params, # move to feature extrctor
         freeze_transformer=False, # move to subclass
         context_type='maskpooling',  # unused, move to cfg_decoder
+        
         loss_type='vit_matte',  # new class for loss, 'vit_matte' or 'smooth_l1'
+        cfg_loss=None, # new class for loss
     ):
         super().__init__()
 
@@ -40,21 +42,17 @@ class InContextMatting(pl.LightningModule):
 
         self.in_context_decoder = instantiate_from_config(cfg_decoder)
 
-        self.feature_index = feature_index
+        
         self.learning_rate = learning_rate
-        self.use_scheduler = use_scheduler
-        self.scheduler_config = scheduler_config
-        self.train_adapter_params = train_adapter_params
-        # self.context_type = context_type
-        self.criterion = MattingCriterion(
-            losses=['unknown_l1_loss', 'known_l1_loss',
-                    'loss_pha_laplacian', 'loss_gradient_penalty']
-        )
-        self.loss_type = loss_type
-        self.freeze_transformer = freeze_transformer
-        # if self.context_type == 'embed':
-        #     self.context_embed = nn.Embedding(
-        #         2, cfg_decoder["params"]['in_chans'])
+
+        self.cfg_scheduler = cfg_scheduler
+
+        self.loss_function = instantiate_from_config(cfg_loss)
+        # self.criterion = MattingCriterion(
+        #     losses=['unknown_l1_loss', 'known_l1_loss',
+        #             'loss_pha_laplacian', 'loss_gradient_penalty']
+        # )
+
 
     def on_train_start(self):
         # set layers to get features
@@ -323,19 +321,11 @@ class InContextMatting(pl.LightningModule):
             f'validation-{dataset_name}/{image_name}', image_to_log, self.current_epoch, dataformats='NHWC')
 
     def configure_optimizers(self):
-        lr = self.learning_rate
-        params = self.in_context_decoder.parameters() if not self.freeze_transformer else self.in_context_decoder.freeze_transformer()
+        params = self.__get_trainable_params()
+        opt = torch.optim.Adam(params, lr=self.learning_rate)
 
-        if self.train_adapter_params:
-            params = list(params)
-            adapter_params = self.feature_extractor.get_trainable_params()
-            params = params + adapter_params
-        opt = torch.optim.Adam(params, lr=lr)
-
-        if self.use_scheduler:
-            assert "target" in self.scheduler_config
-            scheduler = instantiate_from_config(self.scheduler_config)
-
+        if self.cfg_scheduler is not None:
+            scheduler = instantiate_from_config(self.cfg_scheduler)
             scheduler = [
                 {
                     "scheduler": LambdaLR(opt, lr_lambda=scheduler.schedule),
@@ -345,3 +335,13 @@ class InContextMatting(pl.LightningModule):
             ]
             return [opt], scheduler
         return opt
+    
+    def __get_trainable_params(self):
+        
+        params = self.in_context_decoder.parameters() if not self.freeze_transformer else self.in_context_decoder.freeze_transformer()
+
+        if self.train_adapter_params:
+            params = list(params)
+            adapter_params = self.feature_extractor.get_trainable_params()
+            params = params + adapter_params
+        return params

@@ -42,7 +42,7 @@ def parse_args():
     parser.add_argument(
         "--config",
         type=str,
-        default="config/validation.yaml",
+        default="config/test.yaml",
     )
     parser.add_argument(
         "--seed",
