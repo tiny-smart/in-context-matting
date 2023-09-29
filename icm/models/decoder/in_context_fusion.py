@@ -65,6 +65,9 @@ class OneWayAttentionBlock(nn.Module):
         self.context_embed = nn.Embedding(2, dim)
 
     def forward(self, x, context):
+        
+        feature_of_source_image = rearrange(feature_of_source_image, "b c h w -> b (h w) c").contiguous()
+        
         # k: fg-src, bg-sec+bg_embedding
         # v: fg-src+fg_embedding, bg-sec+bg_embedding
         context_feat = context['feature']
@@ -210,7 +213,7 @@ class InContextTransformer(nn.Module):
                  ):
         super().__init__()
         self.attn = OneWayAttentionBlock(
-            dim, n_heads, d_head, mlp_dim_rate=mlp_dim_rate)
+            dim, n_heads, d_head, mlp_dim_rate)
         
 
     def forward(self, feature_of_reference_image, feature_of_source_image, guidance_on_reference_image):
@@ -223,11 +226,11 @@ class InContextTransformer(nn.Module):
         guidance_on_reference_image = F.interpolate(
             guidance_on_reference_image, size=feature_of_reference_image.shape[2:], mode='nearest')
 
-        features = rearrange(features, "b c h w -> b (h w) c").contiguous()
+        feature_of_source_image = rearrange(feature_of_source_image, "b c h w -> b (h w) c").contiguous()
 
-        features = self.context_transformer(features, context)
+        feature_of_source_image = self.attn(feature_of_source_image, context)
 
-        features = rearrange(
-            features, "b (h w) c -> b c h w", h=h, w=w).contiguous()
+        feature_of_source_image = rearrange(
+            feature_of_source_image, "b (h w) c -> b c h w", h=h, w=w).contiguous()
 
-        return features
+        return feature_of_source_image
