@@ -1,78 +1,58 @@
-from einops import rearrange
 from torch import nn
-import torch
-import torch.nn.functional as F
-from inspect import isfunction
-from icm.models.decoder.detail_capture import Detail_Capture
-
-from icm.models.attention.attention_sd import MemoryEfficientCrossAttention, CrossAttention, XFORMERS_IS_AVAILBLE
-from torch import nn
-from icm.models.attention.attention_sam import TwoWayAttentionBlock, Attention, MLPBlock
+from icm.util import instantiate_from_config
 
 class InContextDecoder(nn.Module):
     '''
-    Naive ContextDecoder:
-    Based on single scale version of diffusion_matting, 
-    it uses the context transformer to fuse the context information into the feature,
-    image feature as q, context information as k, v,
-    and then use the detail capture to get the final result. 
+    InContextDecoder is the decoder of InContextMatting.
+
+        in-context decoder:
+
+        list get_trainable_params()
+
+        forward(source, reference)
+            reference = {'feature': feature_of_reference_image,
+                    'guidance': guidance_on_reference_image}
+
+            source = {'feature': feature_of_source_image, 'image': source_images}
+
     '''
 
-    def __init__(self, 
-                 in_chans=960, 
-                 img_chans=3,
-                 n_heads=1, 
-                 convstream_out=[48, 96, 192], 
-                 fusion_out=[256, 128, 64, 32], 
-                 use_context=True,
-                 context_type='embed', # 'embed' 
-                 # context_as_q=False
+    def __init__(self,
+                 cfg_detail_decoder,
+                 cfg_in_context_fusion,
+                 freeze_in_context_fusion=False,
                  ):
         super().__init__()
-        self.context_transformer = ContextTransformerBlock(
-            dim=in_chans, n_heads=n_heads, d_head=in_chans, context_dim=in_chans, context_type=context_type)
 
-        self.detail_capture = Detail_Capture(
-            in_chans=in_chans, img_chans=img_chans, convstream_out=convstream_out, fusion_out=fusion_out)
-        self.use_context = use_context
+        self.in_context_fusion = instantiate_from_config(
+            cfg_in_context_fusion)
+        self.detail_decoder = instantiate_from_config(cfg_detail_decoder)
 
-    def forward(self, features, context, images):
-        '''
-        features: [B, C, H, W]
-        context: {'feature" : [B, C, H, W], "mask": [B, 1, H, W]}
-        '''
-        h, w = features.shape[-2:]
+        self.freeze_in_context_fusion = freeze_in_context_fusion
+        if freeze_in_context_fusion:
+            self.__freeze_in_context_fusion()
 
-        if self.use_context:
+    def forward(self, source, reference):
+        feature_of_reference_image = reference['feature']
+        guidance_on_reference_image = reference['guidance']
 
-            features = rearrange(features, "b c h w -> b (h w) c").contiguous()
+        feature_of_source_image = source['feature']
+        source_images = source['image']
 
-            features = self.context_transformer(features, context)
+        features = self.in_context_fusion(
+            feature_of_reference_image, feature_of_source_image, guidance_on_reference_image)
 
-            features = rearrange(
-                features, "b (h w) c -> b c h w", h=h, w=w).contiguous()
+        output = self.detail_decoder(features, source_images)
 
-        features = self.detail_capture(features, images)
+        return output
 
-        return features
+    def get_trainable_params(self):
+        params = []
+        params = params + list(self.detail_decoder.parameters())
+        if not self.freeze_in_context_fusion:
+            params = params + list(self.in_context_fusion.parameters())
+        return params
 
-    def freeze_transformer(self):
-        '''
-        freeze context transformer and return trainable param
-        '''
-        for param in self.context_transformer.parameters():
+    def __freeze_in_context_fusion(self):
+        for param in self.in_context_fusion.parameters():
             param.requires_grad = False
-        return self.detail_capture.parameters()
-
-
-if __name__ == '__main__':
-    # test
-    model = ContextDecoder()
-    # print(model)
-    feature = torch.randn(2, 960, 32, 32)
-
-    img = torch.randn(2, 3, 512, 512)
-
-    out = model(feature, img)
-
-    print(0)

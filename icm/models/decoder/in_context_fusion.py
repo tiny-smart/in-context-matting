@@ -1,14 +1,48 @@
+import math
 from einops import rearrange
 from torch import nn
 import torch
 import torch.nn.functional as F
 from inspect import isfunction
-from icm.models.decoder.detail_capture import Detail_Capture
 
-from icm.models.attention.attention_sd import MemoryEfficientCrossAttention, CrossAttention, XFORMERS_IS_AVAILBLE
 from torch import nn
 from icm.models.attention.attention_sam import TwoWayAttentionBlock, Attention, MLPBlock
 
+class NoLinearAttention(nn.Module):
+    """
+    An attention layer that remove to_q, to_k, to_v
+    """
+
+    def __init__(
+        self,
+        embedding_dim: int,
+        num_heads: int,
+        downsample_rate: int = 1,
+    ) -> None:
+        super().__init__()
+        self.embedding_dim = embedding_dim
+        self.internal_dim = embedding_dim // downsample_rate
+        self.num_heads = num_heads
+        assert self.internal_dim % num_heads == 0, "num_heads must divide embedding_dim."
+
+        self.v_embedding = nn.Embedding(2, self.internal_dim)
+        self.out_proj = nn.Linear(self.internal_dim, embedding_dim)
+
+    def forward(self, q, k, v ):
+
+        # Attention
+        _, _, _, c_per_head = q.shape
+        attn = q @ k.permute(0, 1, 3, 2)  # B x N_heads x N_tokens x N_tokens
+        attn = attn / math.sqrt(c_per_head)
+        attn = torch.softmax(attn, dim=-1)
+
+        # Get output
+        out = attn @ v
+        out = self._recombine_heads(out)
+        out = self.out_proj(out)
+
+        return out
+    
 
 class OneWayAttentionBlock(nn.Module):
     def __init__(
@@ -16,9 +50,7 @@ class OneWayAttentionBlock(nn.Module):
         dim,
         n_heads,
         d_head,
-        contet_type='maskpooling',
         mlp_dim_rate=4,
-        end_with_self_attn=False,
     ):
         super().__init__()
 
@@ -30,14 +62,7 @@ class OneWayAttentionBlock(nn.Module):
 
         self.norm2 = nn.LayerNorm(dim)
 
-        self.end_with_self_attn = end_with_self_attn
-        if end_with_self_attn:
-            self.self_attn = Attention(dim, n_heads)
-            self.norm3 = nn.LayerNorm(dim)
-        if contet_type == 'embed':
-            self.context_embed = nn.Embedding(2, dim)
-
-        self.context_type = contet_type
+        self.context_embed = nn.Embedding(2, dim)
 
     def forward(self, x, context):
         # k: fg-src, bg-sec+bg_embedding
@@ -45,27 +70,23 @@ class OneWayAttentionBlock(nn.Module):
         context_feat = context['feature']
         guidance_on_reference_image = context['mask']
 
-        if self.context_type == 'embed':
-            # compute context_v
-            context_v = context_feat + \
-                self.context_embed(guidance_on_reference_image.squeeze(
-                    1).long()).permute(0, 3, 1, 2)
-            context_v = context_v.reshape(
-                context_v.shape[0], context_v.shape[1], -1).permute(0, 2, 1)
 
-            # compute context_k
+        # compute context_v
+        context_v = context_feat + \
+            self.context_embed(guidance_on_reference_image.squeeze(
+                1).long()).permute(0, 3, 1, 2)
+        context_v = context_v.reshape(
+            context_v.shape[0], context_v.shape[1], -1).permute(0, 2, 1)
 
-            embedding_k = torch.matmul((1.0-guidance_on_reference_image.squeeze(
-                1).unsqueeze(3).long()), self.context_embed.weight[0].unsqueeze(0))
+        # compute context_k
 
-            context_k = context_feat + embedding_k.permute(0, 3, 1, 2)
-            context_k = context_k.reshape(
-                context_k.shape[0], context_k.shape[1], -1).permute(0, 2, 1)
-        else:
-            # navie attention
-            context_k = context_feat.permute(0, 3, 1, 2).reshape(
-                context_feat.shape[0], context_feat.shape[1], -1).permute(0, 2, 1)
-            context_v = context_k
+        embedding_k = torch.matmul((1.0-guidance_on_reference_image.squeeze(
+            1).unsqueeze(3).long()), self.context_embed.weight[0].unsqueeze(0))
+
+        context_k = context_feat + embedding_k.permute(0, 3, 1, 2)
+        context_k = context_k.reshape(
+            context_k.shape[0], context_k.shape[1], -1).permute(0, 2, 1)
+
 
         x = self.attn(q=x, k=context_k, v=context_v) + x
         x = self.norm1(x)
@@ -173,34 +194,40 @@ class OneWayAttentionBlock2(nn.Module):
 
         return queries, keys
 
+class InContextTransformer(nn.Module):
+    '''
+    one implementation of in_context_fusion
 
-class ContextTransformerBlock(nn.Module):
-    ATTN_CLASSES = {
-        "one_way_attention": OneWayAttentionBlock,
-        # "two_way_attention": TwoWayAttentionBlock,
-    }
+    forward(feature_of_reference_image, feature_of_source_image, guidance_on_reference_image)
+    '''
 
-    def __init__(
-        self,
-        dim,
-        n_heads,
-        d_head,
-        dropout=0.0,
-        context_dim=None,
-        transformer_type="one_way_attention",
-        context_type='embed',
-    ):
+    def __init__(self,
+                 dim,
+                 n_heads,
+                 d_head,
+                 mlp_dim_rate=4,
+                 in_context_type='embed',
+                 ):
         super().__init__()
+        self.attn = OneWayAttentionBlock(
+            dim, n_heads, d_head, mlp_dim_rate=mlp_dim_rate)
+        
 
-        attn_cls = self.ATTN_CLASSES[transformer_type]
-        self.attn = attn_cls(
-            dim,
-            n_heads,
-            d_head,
-            context_type,
-        )
-        self.context_type = context_type
+    def forward(self, feature_of_reference_image, feature_of_source_image, guidance_on_reference_image):
+        '''
+        features: [B, C, H, W]
+        context: {'feature" : [B, C, H, W], "mask": [B, 1, H, W]}
+        '''
+        h, w = feature_of_reference_image.shape[2:]
+        
+        guidance_on_reference_image = F.interpolate(
+            guidance_on_reference_image, size=feature_of_reference_image.shape[2:], mode='nearest')
 
-    def forward(self, x, context):
-        x = self.attn(x, context=context)
-        return x
+        features = rearrange(features, "b c h w -> b (h w) c").contiguous()
+
+        features = self.context_transformer(features, context)
+
+        features = rearrange(
+            features, "b (h w) c -> b c h w", h=h, w=w).contiguous()
+
+        return features

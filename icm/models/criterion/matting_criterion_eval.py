@@ -109,4 +109,4 @@ def compute_sad_loss_torch(pred, target, trimap):
     # loss = np.sum(error_map * (trimap == 128))
     loss = torch.sum(error_map * (trimap == 128).float())
 
-    return loss / 1000, torch.sum(trimap == 128).float()/ 1000.0
+    return loss / 1000
