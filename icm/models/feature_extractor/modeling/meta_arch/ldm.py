@@ -252,7 +252,7 @@ class LdmExtractor(FeatureExtractor):
         share_noise: bool = True,
         enable_resize: bool = False,
         init_checkpoint: Optional[str] = "sd://v1-3",
-        feature_before_module: bool = True,
+        feature_inputted: bool = True,
     ):
 
         super().__init__()
@@ -260,7 +260,7 @@ class LdmExtractor(FeatureExtractor):
         self.encoder_block_indices = encoder_block_indices
         self.unet_block_indices = unet_block_indices
         self.decoder_block_indices = decoder_block_indices
-        self.feature_before_module = feature_before_module
+        self.feature_inputted = feature_inputted
         self.steps = steps
 
         if ldm is not None:
@@ -506,10 +506,10 @@ class LdmExtractor(FeatureExtractor):
         h = unet.middle_block(h, emb, context)
         for module in unet.output_blocks:
             h = torch.cat([h, hs.pop()], dim=1)
-            if module in self.unet_blocks and self.feature_before_module:
+            if module in self.unet_blocks and self.feature_inputted:
                 ret_features.append(h.contiguous())
             h = module(h, emb, context)
-            if module in self.unet_blocks and (not self.feature_before_module):
+            if module in self.unet_blocks and (not self.feature_inputted):
                 ret_features.append(h.contiguous())
         # h = h.type(x.dtype)
         return unet.out(h), ret_features
@@ -647,8 +647,8 @@ class LdmExtractor(FeatureExtractor):
             for idx in indices:
                 if self.image_preprocess is not None:
                     continue
-                # check only work for feature_before_module
-                if self.feature_before_module:
+                # check only work for feature_inputted
+                if self.feature_inputted:
 
                     assert image.shape[-2] // self.feature_strides[idx] == features[idx].shape[-2]
                     assert image.shape[-1] // self.feature_strides[idx] == features[idx].shape[-1]
@@ -670,30 +670,26 @@ class PositionalLinear(nn.Module):
 
         return x
 
-
 class LdmImplicitCaptionerExtractor(nn.Module):
     def __init__(
         self,
         learnable_time_embed=True,
         num_timesteps=1,
         clip_model_name="ViT-L-14",
-        freeze_all_params=False,
         **kwargs,
     ):
         super().__init__()
 
         self.ldm_extractor = LdmExtractor(**kwargs)
 
-        self.text_embed_shape = self.ldm_extractor.ldm.embed_text([
-                                                                  ""]).shape[1:]
+        self.text_embed_shape = self.ldm_extractor.ldm.embed_text([""]).shape[1:]
 
         self.clip = ClipAdapter(name=clip_model_name, normalize=False)
 
         self.clip_project = PositionalLinear(
             self.clip.dim_latent, self.text_embed_shape[1], self.text_embed_shape[0]
         )
-        self.alpha_cond = nn.Parameter(torch.zeros_like(
-            self.ldm_extractor.ldm.uncond_inputs))
+        self.alpha_cond = nn.Parameter(torch.zeros_like(self.ldm_extractor.ldm.uncond_inputs))
 
         self.learnable_time_embed = learnable_time_embed
 
@@ -705,13 +701,8 @@ class LdmImplicitCaptionerExtractor(nn.Module):
                 num_timesteps,
             )
             self.alpha_cond_time_embed = nn.Parameter(
-                torch.zeros(
-                    self.ldm_extractor.ldm.unet.time_embed[-1].out_features)
+                torch.zeros(self.ldm_extractor.ldm.unet.time_embed[-1].out_features)
             )
-        if freeze_all_params:
-            self._freeze()
-        
-        self.uc = self.ldm_extractor.ldm.ldm.get_learned_conditioning([""])
 
     @property
     def feature_size(self):
@@ -738,6 +729,53 @@ class LdmImplicitCaptionerExtractor(nn.Module):
     def extra_repr(self):
         return f"learnable_time_embed={self.learnable_time_embed}"
 
+    def forward(self, batched_inputs):
+        """
+        Args:
+            batched_inputs (dict): expected keys: "img", Optional["caption"]
+
+        """
+        image = batched_inputs["img"]
+
+        prefix = self.clip.embed_image(image).image_embed
+        prefix_embed = self.clip_project(prefix)
+        batched_inputs["cond_inputs"] = (
+            self.ldm_extractor.ldm.uncond_inputs + torch.tanh(self.alpha_cond) * prefix_embed
+        )
+
+        if self.learnable_time_embed:
+            batched_inputs["cond_emb"] = torch.tanh(
+                self.alpha_cond_time_embed
+            ) * self.time_embed_project(prefix)
+
+        self.set_requires_grad(self.training)
+
+        return self.ldm_extractor(batched_inputs)
+
+    def set_requires_grad(self, requires_grad):
+        for p in self.ldm_extractor.ldm.ldm.model.parameters():
+            p.requires_grad = requires_grad
+            
+class LdmImplicitCaptionerExtractorOnlyUnet(nn.Module):
+    def __init__(
+        self,
+        freeze_all_params=False, # 
+        feature_index=5, # to implement
+        **kwargs,
+    ):
+        super().__init__()
+
+        self.ldm_extractor = LdmExtractor(**kwargs)
+
+        self.text_embed_shape = self.ldm_extractor.ldm.embed_text([
+                                                                  ""]).shape[1:]
+
+        if freeze_all_params:
+            self._freeze()
+        
+        self.uc = self.ldm_extractor.ldm.ldm.get_learned_conditioning([""])
+        del self.ldm_extractor.ldm.ldm.cond_stage_model
+        
     def forward(self, batched_inputs):
         """
         Args:
@@ -829,3 +867,16 @@ class LdmImplicitCaptionerExtractor(nn.Module):
         batched_inputs["cond_inputs"] = uc.repeat(image.shape[0], 1, 1)
         
         return self.ldm_extractor(batched_inputs)
+    
+    def get_trainable_params():
+        pass
+    
+    def reset_dim_stride():
+        pass
+    
+    def get_reference_feature():
+        pass
+    
+    def get_source_feature(tensor):
+        #detach()
+        pass

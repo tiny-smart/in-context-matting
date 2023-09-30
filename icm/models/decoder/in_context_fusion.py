@@ -3,7 +3,6 @@ from einops import rearrange
 from torch import nn
 import torch
 import torch.nn.functional as F
-from inspect import isfunction
 
 from torch import nn
 from icm.models.attention.attention_sam import TwoWayAttentionBlock, Attention, MLPBlock
@@ -50,7 +49,7 @@ class OneWayAttentionBlock(nn.Module):
         dim,
         n_heads,
         d_head,
-        mlp_dim_rate=4,
+        mlp_dim_rate,
     ):
         super().__init__()
 
@@ -64,40 +63,31 @@ class OneWayAttentionBlock(nn.Module):
 
         self.context_embed = nn.Embedding(2, dim)
 
-    def forward(self, x, context):
+    def forward(self, feature_of_reference_image, feature_of_source_image, guidance_on_reference_image):
         
-        feature_of_source_image = rearrange(feature_of_source_image, "b c h w -> b (h w) c").contiguous()
+        x = rearrange(feature_of_source_image, "b c h w -> b (h w) c").contiguous()
         
         # k: fg-src, bg-sec+bg_embedding
         # v: fg-src+fg_embedding, bg-sec+bg_embedding
-        context_feat = context['feature']
-        guidance_on_reference_image = context['mask']
-
 
         # compute context_v
-        context_v = context_feat + \
+        context_v = feature_of_reference_image + \
             self.context_embed(guidance_on_reference_image.squeeze(
                 1).long()).permute(0, 3, 1, 2)
         context_v = context_v.reshape(
             context_v.shape[0], context_v.shape[1], -1).permute(0, 2, 1)
 
         # compute context_k
-
         embedding_k = torch.matmul((1.0-guidance_on_reference_image.squeeze(
             1).unsqueeze(3).long()), self.context_embed.weight[0].unsqueeze(0))
-
-        context_k = context_feat + embedding_k.permute(0, 3, 1, 2)
+        context_k = feature_of_reference_image + embedding_k.permute(0, 3, 1, 2)
         context_k = context_k.reshape(
             context_k.shape[0], context_k.shape[1], -1).permute(0, 2, 1)
-
 
         x = self.attn(q=x, k=context_k, v=context_v) + x
         x = self.norm1(x)
         x = self.mlp(x) + x
         x = self.norm2(x)
-        if self.end_with_self_attn:
-            x = self.self_attn(q=x, k=x, v=x) + x
-            x = self.norm3(x)
         return x
 
 
@@ -208,29 +198,53 @@ class InContextTransformer(nn.Module):
                  dim,
                  n_heads,
                  d_head,
-                 mlp_dim_rate=4,
+                 mlp_dim_rate,
                  in_context_type='embed',
                  ):
         super().__init__()
+        
+        
         self.attn = OneWayAttentionBlock(
             dim, n_heads, d_head, mlp_dim_rate)
         
 
     def forward(self, feature_of_reference_image, feature_of_source_image, guidance_on_reference_image):
         '''
-        features: [B, C, H, W]
-        context: {'feature" : [B, C, H, W], "mask": [B, 1, H, W]}
+        feature_of_reference_image: [B, C, H, W]
+        feature_of_source_image: [B, C, H, W]
+        guidance_on_reference_image: [B, 1, H_, W_]
         '''
         h, w = feature_of_reference_image.shape[2:]
         
         guidance_on_reference_image = F.interpolate(
             guidance_on_reference_image, size=feature_of_reference_image.shape[2:], mode='nearest')
 
-        feature_of_source_image = rearrange(feature_of_source_image, "b c h w -> b (h w) c").contiguous()
-
-        feature_of_source_image = self.attn(feature_of_source_image, context)
-
-        feature_of_source_image = rearrange(
-            feature_of_source_image, "b (h w) c -> b c h w", h=h, w=w).contiguous()
+        feature_of_source_image = self.attn(feature_of_reference_image, feature_of_source_image, guidance_on_reference_image)
 
         return feature_of_source_image
+
+        # if self.context_type == 'maskpooling':
+        #     feature_of_reference_image = self.context_maskpooling(
+        #         feature_of_reference_image, guidance_on_reference_image)
+
+
+        # # unused, move to context_decoder
+        # def context_maskpooling(self, feature, mask):
+        #     '''
+        #     get context feature tokens by maskpooling
+        #     feature: [B, C, H/d, W/d]
+        #     mask: [B, 1, H, W]  [0,1]
+        #     return: [B, token_num, C] token_num = H*W/d^2
+        #     '''
+        #     mask[mask < 1] = 0
+        #     mask = -1 * mask
+        #     kernel_size = mask.shape[2] // feature.shape[2]
+        #     mask = F.max_pool2d(mask, kernel_size=kernel_size,
+        #                         stride=kernel_size, padding=0)
+        #     mask = -1*mask
+
+        #     feature = mask*feature
+        #     feature = feature.reshape(
+        #         feature.shape[0], feature.shape[1], -1).permute(0, 2, 1)
+
+        #     return feature
