@@ -83,7 +83,7 @@ class InContextMatting(pl.LightningModule):
         outputs = self(reference_images,
                        guidance_on_reference_image, source_images)
 
-        loss_dict = self.loss_function(outputs, labels, trimaps)
+        loss_dict = self.loss_function(trimaps, outputs, labels)
 
         loss = sum(loss_dict.values())
 
@@ -164,6 +164,7 @@ class InContextMatting(pl.LightningModule):
         image = image * torch.tensor([0.229, 0.224, 0.225], device=self.device) + \
             torch.tensor([0.485, 0.456, 0.406], device=self.device)
         image = torch.clamp(image, 0, 1)
+        return image
 
     def test_step(self, batch, batch_idx):
         loss_dict, loss, preds = self.__shared_step(batch)

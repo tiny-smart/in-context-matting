@@ -88,6 +88,9 @@ class LossFunction(nn.Module):
 
         return dict(focal_loss=loss)
     def forward(self, sample_map, preds, targets):
+        
+        preds = {'phas': preds}
+        targets = {'phas': targets}
         losses = dict()
         for k in self.losses:
             if k=='unknown_l1_loss' or k=='known_l1_loss' or k=='loss_gradient_penalty':

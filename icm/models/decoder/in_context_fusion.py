@@ -64,7 +64,7 @@ class OneWayAttentionBlock(nn.Module):
         self.context_embed = nn.Embedding(2, dim)
 
     def forward(self, feature_of_reference_image, feature_of_source_image, guidance_on_reference_image):
-        
+        h, w = feature_of_reference_image.shape[2:]
         x = rearrange(feature_of_source_image, "b c h w -> b (h w) c").contiguous()
         
         # k: fg-src, bg-sec+bg_embedding
@@ -89,7 +89,7 @@ class OneWayAttentionBlock(nn.Module):
         x = self.mlp(x) + x
         x = self.norm2(x)
         
-        x = rearrange(x, "b (h w) c -> b c h w", h=feature_of_source_image.shape[2])
+        x = rearrange(x, "b (h w) c -> b c h w", h=h, w=w).contiguous()
         
         return x
 
