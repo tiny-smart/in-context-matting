@@ -29,7 +29,7 @@ if __name__ == '__main__':
         parser.add_argument(
             "--debug",
             type=bool,
-            default=False,
+            default=True,
         )
         parser.add_argument(
             "--resume",
@@ -46,9 +46,9 @@ if __name__ == '__main__':
         parser.add_argument(
             "--config",
             type=str,
-            # "config/train.yaml"
-            # "config/train_in_context_matting.yaml"
-            default="config/train_in_context_matting.yaml",
+            # default="config/train_diffusion_matting.yaml"
+            # default="config/train_in_context_matting_transformer.yaml",
+            default="config/train_in_context_matting_correspondence.yaml",
         )
         parser.add_argument(
             "--logdir",
