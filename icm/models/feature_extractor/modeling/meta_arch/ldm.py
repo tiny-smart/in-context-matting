@@ -29,6 +29,8 @@ from ..diffusion import GaussianDiffusion, create_gaussian_diffusion
 from ..preprocess import batched_input_to_device
 from .helper import FeatureExtractor
 
+from ptp.ptp_attention_controllers import AttentionStore
+from ptp.ptp_utils import register_attention_control
 
 def build_ldm_from_cfg(cfg_name) -> _LatentDiffusion:
 
@@ -800,3 +802,100 @@ class LdmImplicitCaptionerExtractorUnetOnly(nn.Module):
     
     def get_source_feature(self, images):
         return self(images)[self.feature_index].detach()
+
+
+class LdmImplicitCaptionerExtractorUnetOnlyWithAttentionstore(nn.Module):
+    '''
+        feature_of_reference_image: [B, C, H, W]
+        ft_attn_of_source_image: {"ft": [B, C, H, W], "attn": [B, H, W, H*W]}
+        
+    '''
+    def __init__(
+        self,
+        feature_index=5,
+        attention_res=16,
+        attention_after_softmax=False,
+        set_diag_to_zero=True,
+        **kwargs,
+    ):
+        super().__init__()
+
+        self.ldm_extractor = LdmExtractor(**kwargs)
+        self.feature_index = feature_index
+        self.register_buffer("uc", self.ldm_extractor.ldm.ldm.get_learned_conditioning([""]))
+        
+        del self.ldm_extractor.ldm.ldm.cond_stage_model
+        
+        self.__freeze_model()
+        
+        self.controller = AttentionStore(store_res = attention_res)
+        self.attention_res = attention_res
+        self.set_diag_to_zero = set_diag_to_zero
+        ldm = self.ldm_extractor.ldm.ldm
+        
+        register_attention_control(ldm.model, self.controller, if_softmax=attention_after_softmax)
+
+    def reset_dim_stride(self):
+        self.ldm_extractor.reset_dim_stride()
+
+    def __freeze_model(self):
+        super().train(mode=False)
+        for p in self.parameters():
+            p.requires_grad = False
+    
+    
+    def forward(self, images):
+
+        batched_inputs = {}
+        
+        batched_inputs["img"] = images
+        batched_inputs["cond_inputs"] = self.uc.repeat(images.shape[0], 1, 1)
+
+        return self.ldm_extractor(batched_inputs)
+    
+    def get_trainable_params(self):
+        return []
+    
+    def get_reference_feature(self, images):
+
+        return self(images)[self.feature_index].detach()
+    
+    def get_source_feature(self, images):
+        # return {"ft": [B, C, H, W], "attn": [B, H, W, H*W]}
+        
+        self.controller.reset()
+        torch.cuda.empty_cache()
+        batch_size = images.shape[0]
+        
+        ft = self(images)[self.feature_index].detach()
+        attention_maps = self.get_feature_attention(batch_size)
+
+        output = {"ft": ft, "attn": attention_maps}
+        return output
+    
+    def get_feature_attention(self, batch_size):
+
+        attention_maps = self.__aggregate_attention(from_where=["down", "mid", "up"], is_cross=False, batch_size=batch_size)
+
+        attention_maps = attention_maps.permute(0,2,1).reshape((batch_size, -1, self.attention_res, self.attention_res)) # [bs, h*w, h, w]
+        attention_maps = attention_maps.permute(0,2,3,1) # [bs, h, w, h*w]
+        return attention_maps
+    
+    def __aggregate_attention(self, from_where: List[str], is_cross: bool, batch_size: int):
+        out = []
+        attention_maps = self.controller.get_average_attention()
+        res = self.attention_res
+        num_pixels = res ** 2
+        for location in from_where:
+            for item in attention_maps[f"{location}_{'cross' if is_cross else 'self'}"]:
+                if item.shape[1] == num_pixels:
+                    cross_maps = item.reshape(batch_size, -1, res, res, item.shape[-1])
+                    out.append(cross_maps)
+        out = torch.cat(out, dim=1)
+        out = out.sum(1) / out.shape[1]
+        out = out.reshape(batch_size, out.shape[-1], out.shape[-1])
+        
+        if self.set_diag_to_zero:
+            for o in out:
+                o = o - torch.diag(torch.diag(o))
+        return out

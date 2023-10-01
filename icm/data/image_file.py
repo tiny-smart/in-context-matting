@@ -174,6 +174,14 @@ def get_dir_ext(dataset):
     #     alpha_ext = '.png'
     #     trimap_ext = '.png'
 
+    elif dataset == 'RM1k': 
+        image_dir = '/data1/guohe/ImageMatting/Combined_Dataset/RM1K/RM1K/Image'
+        label_dir = '/data1/guohe/ImageMatting/Combined_Dataset/RM1K/RM1K/GT'
+        trimap_dir = '/data1/guohe/ImageMatting/Combined_Dataset/RM1K/RM1K/trimap_self_generated'
+        merged_ext = '.jpg'
+        alpha_ext = '.png'
+        trimap_ext = '.png'
+        
     elif dataset == 'open-images-test':
         image_dir = '/data1/guohe/diffusion-matting/ICM/datasets/open-images/image/test'
         label_dir = '/data1/guohe/diffusion-matting/ICM/datasets/open-images/mask_class/test'

@@ -1,14 +1,9 @@
-from typing import Optional
-from pytorch_lightning.utilities.types import STEP_OUTPUT
-from torch import nn
-from torch.optim.optimizer import Optimizer
-from icm.models.criterion.loss_function import MattingCriterion
-from icm.models.criterion.matting_criterion_eval import compute_mse_loss, compute_sad_loss, compute_connectivity_error, compute_gradient_loss, compute_mse_loss_torch, compute_sad_loss_torch
+
+from icm.models.criterion.matting_criterion_eval import compute_mse_loss_torch, compute_sad_loss_torch
 from icm.util import instantiate_from_config, instantiate_feature_extractor
 import pytorch_lightning as pl
 import torch
 from torch.optim.lr_scheduler import LambdaLR
-from pytorch_lightning.utilities import grad_norm
 
 
 class DiffusionMatting(pl.LightningModule):
@@ -16,12 +11,10 @@ class DiffusionMatting(pl.LightningModule):
         self,
         cfg_feature_extractor,
         cfg_decoder,
-        feature_index,
+        cfg_loss_function,
         learning_rate,
         guidance_type,
-        use_scheduler,
-        scheduler_config,
-        train_adapter_params,
+        cfg_scheduler,
     ):
         super().__init__()
 
@@ -29,32 +22,20 @@ class DiffusionMatting(pl.LightningModule):
         self.feature_extractor = instantiate_feature_extractor(
             cfg_feature_extractor)
 
-        self.diffusion_decoder = instantiate_from_config(cfg_decoder)
-        # self.cfg_feature_extractor = cfg_feature_extractor
-        # self.cfg_decoder = cfg_decoder
+        self.decoder = instantiate_from_config(cfg_decoder)
 
-        self.feature_index = feature_index
         self.guidance_type = guidance_type
         self.learning_rate = learning_rate
-        self.use_scheduler = use_scheduler
-        self.scheduler_config = scheduler_config
-        self.train_adapter_params = train_adapter_params
 
-        self.criterion = MattingCriterion(
-            losses=[
-                "unknown_l1_loss",
-                "known_l1_loss",
-                "loss_pha_laplacian",
-                "loss_gradient_penalty",
-            ]
-        )
+        self.scheduler_config = cfg_scheduler
 
-    # def configure_sharded_model(self):
-    #     self.feature_extractor = instantiate_feature_extractor(
-    #         self.cfg_feature_extractor
-    #     )
-    #     self.diffusion_decoder = instantiate_from_config(self.cfg_decoder)
+        self.loss_function = instantiate_from_config(cfg_loss_function)
 
+    def forward(self, images, images_guidance):
+        x = self.feature_extractor.get_source_feature(images)
+        x = self.diffusion_decoder(x, images_guidance)
+        return x
+    
     def on_train_start(self):
         # set layers to get features
         self.feature_extractor.reset_dim_stride()
@@ -63,20 +44,26 @@ class DiffusionMatting(pl.LightningModule):
         self.log("epoch", self.current_epoch, on_step=False,
                  on_epoch=True, prog_bar=False, sync_dist=True)
 
-    def get_progress_bar_dict(self):
-        # don't show the version number
-        items = super().get_progress_bar_dict()
-        items.pop("v_num", None)
-        return items
+    def training_step(self, batch, batch_idx):
+        loss_dict, loss, _ = self.__shared_step(batch)
 
-    def forward(self, img, images_guidance):
-        # x = self.feature_extractor({'img': img})[self.feature_index].detach()
-        x = self.feature_extractor({'img': img})[self.feature_index]
-        x = self.diffusion_decoder(x, images_guidance)
+        self.__log_loss(loss_dict, loss, "train")
 
-        return x
+        # log learning rate
+        self.log("lr", self.trainer.optimizers[0].param_groups[0]
+                 ["lr"], on_step=True, on_epoch=False, prog_bar=True, sync_dist=True)
 
-    def get_guidance_map(self, trimaps, labels):
+        return loss
+
+    def __log_loss(self, loss_dict, loss, prefix):
+        loss_dict = {
+            f"{prefix}/{key}": loss_dict.get(key) for key in loss_dict}
+        self.log_dict(loss_dict, on_step=True, on_epoch=True,
+                      prog_bar=False, sync_dist=True)
+        self.log(f"{prefix}/loss", loss, on_step=True,
+                 on_epoch=True, prog_bar=True, sync_dist=True)
+
+    def __get_guidance_map(self, trimaps, labels):
         if self.guidance_type == "coarse_map":
             # make coarse mask, 0 for bg, 1 for fg and unknown
             coarse_mask = torch.zeros_like(trimaps)
@@ -87,160 +74,124 @@ class DiffusionMatting(pl.LightningModule):
         elif self.guidance_type == "trimap":
             return trimaps
 
-        elif self.guidance_type == "null":
-            return torch.zeros_like(trimaps)
-
         else:
             raise NotImplementedError
 
-    def shared_step(self, batch, batch_idx):
+    def __shared_step(self, batch, batch_idx):
         images, labels, trimaps = batch["image"], batch["alpha"], batch["trimap"]
 
-        guidance_map = self.get_guidance_map(trimaps, labels)
+        guidance_map = self.__get_guidance_map(trimaps, labels)
         images_guidance = torch.cat((images, guidance_map), dim=1)
 
-        output = self(images, images_guidance)
-        return output, guidance_map
+        outputs = self(images, images_guidance)
+        loss_dict = self.loss_function(trimaps, outputs, labels)
 
-    def training_step(self, batch, batch_idx):
-        labels, trimaps = batch["alpha"], batch["trimap"]
+        loss = sum(loss_dict.values())
 
-        output, _ = self.shared_step(batch, batch_idx)
-
-        sample_map = torch.zeros_like(trimaps)
-        sample_map[trimaps == 1] = 1
-        losses = self.criterion(sample_map, {"phas": output}, {"phas": labels})
-
-        # log training loss
-
-        # add prefix 'train' to the keys
-        losses = {f"train/{key}": losses.get(key) for key in losses}
-
-        self.log_dict(losses, on_step=True, on_epoch=True,
-                      prog_bar=False, sync_dist=True)
-
-        # log learning rate
-        self.log("lr", self.trainer.optimizers[0].param_groups[0]
-                 ["lr"], on_step=True, on_epoch=False, prog_bar=True, sync_dist=True)
-
-        # init loss tensor
-        loss = torch.zeros(1).type_as(labels)
-
-        for key in losses:
-            loss += losses[key]
-
-        self.log("train/loss", loss, on_step=True,
-                 on_epoch=False, prog_bar=True, sync_dist=True)
-
-        return loss
-
+        return loss_dict, loss, outputs
+    
     def validation_step(self, batch, batch_idx):
-        # batch size = 1
-        assert batch["image"].shape[0] == 1
+        loss_dict, loss, preds = self.__shared_step(batch)
 
-        labels, trimaps, dataset_name, image_name = batch["alpha"], batch[
-            "trimap"], batch["dataset_name"], batch["image_name"]
+        self.__log_loss(loss_dict, loss, "val")
 
-        output, guidance_map = self.shared_step(batch, batch_idx)
+        return preds, batch
 
-        label = labels.squeeze()*255.0
-        trimap = trimaps.squeeze()*128
-        pred = output.squeeze()*255.0
+    def validation_step_end(self, outputs):
 
-        # for logging
-        guidance_map = guidance_map.squeeze()
-        guidance_map = guidance_map/2.0 if self.guidance_type == "trimap" else guidance_map/1.0
-        dataset_name = dataset_name[0]
-        image_name = image_name[0].split('.')[0]
+        preds, batch = outputs
+
+        # get one sample from batch
+        pred = preds[0].squeeze()*255.0
         image = batch['image'][0]
+        label = batch["alpha"][0].squeeze()*255.0
+        trimap = batch["trimap"][0].squeeze()*128
 
-        # compute loss
+        dataset_name = batch["dataset_name"][0]
+        image_name = batch["image_name"][0].split('.')[0]
 
-        metrics_unknown, metrics_all = self.compute_two_metrics(
-            pred, label, trimap)
+        self.__compute_and_log_mse_sad_of_one_sample(
+            pred, label, trimap, prefix="val")
 
-        # log validation metrics
-        self.log_dict(metrics_unknown, on_step=False,
-                      on_epoch=True, prog_bar=False, sync_dist=True)
-        self.log_dict(metrics_all, on_step=False,
-                      on_epoch=True, prog_bar=False, sync_dist=True)
+        self.__log_image(
+            image, pred, label, trimap, dataset_name, image_name, prefix='val')
 
-        self.log_validation_result(
-            image, guidance_map, pred, label, dataset_name, image_name)
-
-    def log_validation_result(self, image, guidance_map, pred, label, dataset_name, image_name):
-        ########### log image, guidance_map, output and gt ###########
-        # process image
-        image = image.permute(1, 2, 0)
-        image = image * torch.tensor([0.229, 0.224, 0.225], device=self.device) + \
-            torch.tensor([0.485, 0.456, 0.406], device=self.device)
-        # clip to [0, 1]
-        image = torch.clamp(image, 0, 1)
-
-        # process guidance_map, pred, label
-        guidance_map = torch.stack((guidance_map,)*3, axis=-1)
-        pred = torch.stack((pred/255.0,)*3, axis=-1)
-        label = torch.stack((label/255.0,)*3, axis=-1)
-
-        # concat pred, guidance_map, label, image
-        image_to_log = torch.stack(
-            (image, guidance_map, label, pred), axis=0)
-
-        # log image
-        self.logger.experiment.add_images(
-            f'validation-{dataset_name}/{image_name}', image_to_log, self.current_epoch, dataformats='NHWC')
-
-    def compute_two_metrics(self, pred, label, trimap, prefix="val"):
+    def __compute_and_log_mse_sad_of_one_sample(self, pred, label, trimap, prefix="val"):
         # compute loss for unknown pixels
         mse_loss_unknown_ = compute_mse_loss_torch(pred, label, trimap)
-        sad_loss_unknown_ = compute_sad_loss_torch(
-            pred, label, trimap)[0]
+        sad_loss_unknown_ = compute_sad_loss_torch(pred, label, trimap)
 
         # compute loss for all pixels
         trimap = torch.ones_like(label)*128
-
         mse_loss_all_ = compute_mse_loss_torch(pred, label, trimap)
-        sad_loss_all_ = compute_sad_loss_torch(
-            pred, label, trimap)[0]
+        sad_loss_all_ = compute_sad_loss_torch(pred, label, trimap)
 
-        # log validation metrics
+        # log
         metrics_unknown = {f'{prefix}/mse_unknown': mse_loss_unknown_,
                            f'{prefix}/sad_unknown': sad_loss_unknown_, }
 
         metrics_all = {f'{prefix}/mse_all': mse_loss_all_,
                        f'{prefix}/sad_all': sad_loss_all_, }
 
-        return metrics_unknown, metrics_all
+        self.log_dict(metrics_unknown, on_step=False,
+                      on_epoch=True, prog_bar=False, sync_dist=True)
+        self.log_dict(metrics_all, on_step=False,
+                      on_epoch=True, prog_bar=False, sync_dist=True)
 
-    # def on_before_optimizer_step(self, optimizer: Optimizer, optimizer_idx: int):
-    #     # for debugging
-    #     norms = grad_norm(self.feature_extractor,norm_type=2)
-    #     norms_ = grad_norm(self.diffusion_decoder,norm_type=2)
-    #     print(f"alpha_cond grad norm: {norms}")
+    def __log_image(self, image, pred, label, trimap, dataset_name, image_name, prefix='val'):
+        ########### log source_image, masked_reference_image, output and gt ###########
+        # process image, masked_reference_image, pred, label
+        image = self.__revert_normalize(image)
+        pred = torch.stack((pred/255.0,)*3, axis=-1)
+        label = torch.stack((label/255.0,)*3, axis=-1)
+        trimap = torch.stack((trimap/255.0,)*3, axis=-1)
+
+        # concat pred, masked_reference_image, label, source_image
+        image_for_log = torch.stack(
+            (image, trimap, label, pred), axis=0)
+
+        # log image
+        self.logger.experiment.add_images(
+            f'{prefix}-{dataset_name}/{image_name}', image_for_log, self.current_epoch, dataformats='NHWC')
+
+    def __revert_normalize(self, image):
+        # image: [C, H, W]
+        image = image.permute(1, 2, 0)
+        image = image * torch.tensor([0.229, 0.224, 0.225], device=self.device) + \
+            torch.tensor([0.485, 0.456, 0.406], device=self.device)
+        image = torch.clamp(image, 0, 1)
+        return image
+
+    def test_step(self, batch, batch_idx):
+        loss_dict, loss, preds = self.__shared_step(batch)
+
+        return loss_dict, loss, preds
 
     def configure_optimizers(self):
-        lr = self.learning_rate
-        params = self.diffusion_decoder.parameters()
+        params = self.__get_trainable_params()
+        opt = torch.optim.Adam(params, lr=self.learning_rate)
 
-        if self.train_adapter_params:
-            params = list(params)
-            adapter_params = self.feature_extractor.get_trainable_params()
-            params = params + adapter_params
-        opt = torch.optim.Adam(params, lr=lr)
-
-        if self.use_scheduler:
-            assert "target" in self.scheduler_config
-            scheduler = instantiate_from_config(self.scheduler_config)
-
-            scheduler = [
-                {
-                    "scheduler": LambdaLR(opt, lr_lambda=scheduler.schedule),
-                    "interval": "step",
-                    "frequency": 1,
-                }
-            ]
+        if self.cfg_scheduler is not None:
+            scheduler = self.__get_scheduler(opt)
             return [opt], scheduler
         return opt
+
+    def __get_trainable_params(self):
+        params = []
+        params = params + self.decoder.get_trainable_params() + \
+            self.feature_extractor.get_trainable_params()
+        return params
+
+    def __get_scheduler(self, opt):
+        scheduler = instantiate_from_config(self.cfg_scheduler)
+        scheduler = [
+            {
+                "scheduler": LambdaLR(opt, lr_lambda=scheduler.schedule),
+                "interval": "step",
+                "frequency": 1,
+            }
+        ]
+        return scheduler
 
 
 class ModifyModelSave(pl.Callback):

@@ -1,19 +1,26 @@
 model:
   target: icm.models.diffusion_matting.DiffusionMatting
-
   params:
     learning_rate: 0.001
-    
-    # which layer to use for matting
-    feature_index: 6
-    guidance_type: "trimap" # 'coarse_map', 'none', 'trimap'
-    use_scheduler: True
-    train_adapter_params: True
+    guidance_type: "trimap" # 'coarse_map', 'trimap'
 
-    scheduler_config:
+    cfg_loss_function:
+      target: icm.models.criterion.loss_function.LossFunction
+      params:
+        losses: [
+            "unknown_l1_loss",
+            "known_l1_loss",
+            "loss_pha_laplacian",
+            "loss_gradient_penalty",
+            # "smooth_l1_loss",
+            # "cross_entropy_loss",
+            # "focal_loss",
+          ]
+
+    cfg_scheduler:
       target: icm.lr_scheduler.LambdaLinearScheduler
       params:
-        warm_up_steps: [1] # NOTE for resuming. use 10000 if starting from scratch
+        warm_up_steps: [250] # NOTE 1 for resuming. use 250 if starting from scratch
         cycle_lengths: [10000000000000]
         f_start: [1.e-6]
         f_max: [1.]
@@ -21,26 +28,26 @@ model:
 
     cfg_feature_extractor:
       load_odise_params: False # True only if init_ckpt is sd-v1.3
-      target: icm.models.feature_extractor.modeling.meta_arch.ldm.LdmImplicitCaptionerExtractor
+      target: icm.models.feature_extractor.modeling.meta_arch.ldm.LdmImplicitCaptionerExtractorUnetOnly
       params:
+        feature_index: 5
+        attention_res: 16
+        attention_after_softmax: False
+        set_diag_to_zero: True
+
+        # LdmExtractor params
         encoder_block_indices: [1, 3, 5, 7]
         # 128*512*512 256*256*256 512*128*128 512*64*64
         unet_block_indices: [2, 5, 8, 11]
         # 2560*8*8 1920*16*16 960*32*32 640*64*64
         decoder_block_indices: [2, 5, 8, 11]
         # 512*64*64 512*128*128 256*256*256 128*512*512
-        steps: [0]
-        learnable_time_embed: True
-        num_timesteps: 1
-        clip_model_name: "ViT-L-14-336"
-
-        # set alpha, clip_project, time_embed_project require_grad=False
-        freeze_all_params: True
+        steps: [261] # 0 for odise, 261 for DIFT
+        share_noise: True
+        init_checkpoint: "sd://v2-1-base"
+        extract_feature_inputted_to_layer: False # True: odise  False: DIFT
 
         # diffusion-matte with sd://v2-1-base, odise with sd://v1-3"(init)
-        init_checkpoint: "sd://v2-1-base"
-        # if loading is slow, fix the clip model. /home/guohe/anaconda3/envs/icm/lib/python3.9/site-packages/ldm/modules/encoders/modules.py
-        #                         and clip adaptor /data1/guohe/diffusion-matting/ICM/icm/models/feature_extractor/modeling/meta_arch/clip.py
 
         # "sd://v1-3": ("v1-inference.yaml", (512, 512), (64, 64)),
         # "sd://v1-4": ("v1-inference.yaml", (512, 512), (64, 64)),
@@ -54,7 +61,8 @@ model:
     cfg_decoder:
       target: icm.models.decoder.detail_capture.Detail_Capture
       params:
-        in_chans: 960
+        ckpt: None
+        in_chans: 1280
         img_chans: 4
         convstream_out: [48, 96, 192]
         fusion_out: [256, 128, 64, 32]
@@ -62,10 +70,8 @@ model:
 data:
   target: icm.data.data_module.DataModuleFromConfig
   params:
-    # train_batch_size is set here, validation_batch_size is 1
-    batch_size: 2
-    # train_loader_num_workers is set here, validation_loader_num_workers is 0
-    num_workers: 2
+    batch_size: 8
+    num_workers: 8
     shuffle_train: False
     train:
       target: icm.data.data_generator.MultiDataGeneratorDoubleSet
@@ -77,7 +83,15 @@ data:
           params:
             ratio: 0.9
             dataset_name:
-              ["AIM", "PPM", "AM2k_train", "AM2k_val", "RWP636", "P3M_val_np"]
+              [
+                "AIM",
+                "PPM",
+                "AM2k_train",
+                "AM2k_val",
+                "RWP636",
+                "P3M_val_np",
+                "RM1k",
+              ]
     validation:
       target: icm.data.data_generator.MultiDataGeneratorDoubleSet
       params:
@@ -88,22 +102,32 @@ data:
           params:
             ratio: 0.9
             dataset_name:
-              ["AIM", "PPM", "AM2k_train", "AM2k_val", "RWP636", "P3M_val_np"]
-
+              [
+                "AIM",
+                "PPM",
+                "AM2k_train",
+                "AM2k_val",
+                "RWP636",
+                "P3M_val_np",
+                "RM1k",
+              ]
 trainer:
   accelerator: "ddp"
-  gpus: 1
+  gpus: 2
   max_epochs: 1000
   auto_select_gpus: False
   num_sanity_val_steps: 0
+  plugins:
+    target: pytorch_lightning.plugins.DDPPlugin
+    params:
+      find_unused_parameters: False
   # weights_summary: full
-  
+
   cfg_logger:
     target: pytorch_lightning.loggers.tensorboard.TensorBoardLogger
     params:
-      save_dir: logs # set in main.py 
+      save_dir: logs # set in main.py
       default_hp_metric: False
-
 
   cfg_callbacks:
     modelcheckpoint:
@@ -111,7 +135,7 @@ trainer:
       params:
         monitor: epoch
         mode: max
-        save_top_k: 100
+        save_top_k: 1000
         every_n_epochs: 1
         # save_last: True
         # save_weights_only: False

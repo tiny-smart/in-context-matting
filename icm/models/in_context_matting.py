@@ -166,6 +166,9 @@ class InContextMatting(pl.LightningModule):
         image = torch.clamp(image, 0, 1)
         return image
 
+    def on_validation_batch_end(self, outputs, batch, batch_idx, dataloader_idx):
+        torch.cuda.empty_cache()
+
     def test_step(self, batch, batch_idx):
         loss_dict, loss, preds = self.__shared_step(batch)
 

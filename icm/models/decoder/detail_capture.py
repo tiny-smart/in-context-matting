@@ -109,7 +109,7 @@ class DetailCapture(nn.Module):
         img_chans=4,
         convstream_out = [48, 96, 192],
         fusion_out = [256, 128, 64, 32],
-        
+        ckpt=None
     ):
         super().__init__()
         assert len(fusion_out) == len(convstream_out) + 1
@@ -131,8 +131,19 @@ class DetailCapture(nn.Module):
         self.matting_head = Matting_Head(
             in_chans = fusion_out[-1],
         )
+        
+        if ckpt is not None:
+            self.load_state_dict(ckpt['state_dict'], strict=False)
+            print('load detail capture ckpt from', ckpt['path'])
 
     def forward(self, features, images):
+        
+        if isinstance(features, dict):
+            
+            features = features['feature']
+            trimap = features['trimap']
+            images = torch.cat([images, trimap], dim=1)
+        
         detail_features = self.convstream(images)
         # D0  2  4  512 512
         # D1  2  48 256 256
