@@ -29,7 +29,7 @@ if __name__ == '__main__':
         parser.add_argument(
             "--debug",
             type=bool,
-            default=True,
+            default=False,
         )
         parser.add_argument(
             "--resume",
