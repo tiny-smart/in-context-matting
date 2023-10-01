@@ -7,6 +7,8 @@ import torch.nn.functional as F
 from torch import nn
 from icm.models.attention.attention_sam import TwoWayAttentionBlock, Attention, MLPBlock
 
+from icm.models.decoder.bottleneck_block import BottleneckBlock
+
 class NoLinearAttention(nn.Module):
     """
     An attention layer that remove to_q, to_k, to_v
@@ -57,7 +59,7 @@ class OneWayAttentionBlock(nn.Module):
 
         self.norm1 = nn.LayerNorm(dim)
 
-        self.mlp = MLPBlock(dim, dim*mlp_dim_rate)
+        self.mlp = MLPBlock(dim, int(dim*mlp_dim_rate))
 
         self.norm2 = nn.LayerNorm(dim)
 
@@ -198,18 +200,25 @@ class InContextTransformer(nn.Module):
     '''
 
     def __init__(self,
-                 dim,
+                 in_dim,
                  n_heads,
                  d_head,
                  mlp_dim_rate,
-
+                 use_bottle_neck=False,
+                 bottle_neck_dim=512,
                  ):
         super().__init__()
         
         
         self.attn = OneWayAttentionBlock(
-            dim, n_heads, d_head, mlp_dim_rate)
+            in_dim, n_heads, d_head, mlp_dim_rate) if not use_bottle_neck else OneWayAttentionBlock(bottle_neck_dim, n_heads, d_head, mlp_dim_rate)
         
+        self.use_bottle_neck = use_bottle_neck
+        if use_bottle_neck:
+            self.bottle_neck = BottleneckBlock(in_channels=in_dim,
+                        bottleneck_channels=in_dim // 4,
+                        out_channels=bottle_neck_dim,
+                        norm="GN",)
 
     def forward(self, feature_of_reference_image, feature_of_source_image, guidance_on_reference_image):
         '''
@@ -217,14 +226,23 @@ class InContextTransformer(nn.Module):
         feature_of_source_image: [B, C, H, W]
         guidance_on_reference_image: [B, 1, H_, W_]
         '''
+        
+        if self.use_bottle_neck:
+            feature_of_reference_image = self.bottle_neck(feature_of_reference_image).detach()
+            feature_of_source_image = self.bottle_neck(feature_of_source_image)
+            
         h, w = feature_of_reference_image.shape[2:]
         
         guidance_on_reference_image = F.interpolate(
             guidance_on_reference_image, size=feature_of_reference_image.shape[2:], mode='nearest')
 
+        
         feature_of_source_image = self.attn(feature_of_reference_image, feature_of_source_image, guidance_on_reference_image)
 
         return feature_of_source_image
+
+
+
 
         # if self.context_type == 'maskpooling':
         #     feature_of_reference_image = self.context_maskpooling(
