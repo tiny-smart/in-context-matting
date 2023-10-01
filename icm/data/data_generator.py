@@ -837,7 +837,7 @@ class ContextDataset(Dataset):
         sample = self.transform(sample)
         return sample
 
-class ContextDataset_new(Dataset):
+class InContextDataset(Dataset):
     # divide a dataset into train set and validation set
     def __init__(self, data, crop_size=1024, phase="train"):
         self.phase = phase

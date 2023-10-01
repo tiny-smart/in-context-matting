@@ -8,16 +8,16 @@ model:
       params:
         losses:
           [
-            "unknown_l1_loss",
-            "known_l1_loss",
-            "loss_pha_laplacian",
-            "loss_gradient_penalty",
-            # "smooth_l1_loss",
+            # "unknown_l1_loss",
+            # "known_l1_loss",
+            # "loss_pha_laplacian",
+            # "loss_gradient_penalty",
+            "smooth_l1_loss",
             # "cross_entropy_loss",
             # "focal_loss",
           ]
 
-    scheduler_config:
+    cfg_scheduler:
       target: icm.lr_scheduler.LambdaLinearScheduler
       params:
         warm_up_steps: [250] # NOTE 1 for resuming. use 250 if starting from scratch
@@ -55,7 +55,7 @@ model:
         # "sd://v2-1-v": ("v2-inference.yaml", (768, 768), (96, 96)),
         # "sd://x4-0-base": ("x4-upscaling.yaml", (2048, 2048), (512, 512)),
 
-    cfg_decoder:
+    cfg_in_context_decoder:
       target: icm.models.decoder.in_context_decoder.InContextDecoder
       params:
         freeze_in_context_fusion: False # True for finetuning
@@ -66,7 +66,6 @@ model:
             img_chans: 3
             convstream_out: [48, 96, 192]
             fusion_out: [256, 128, 64, 32]
-            freeze_detail_decoder: False # True for finetuning
         cfg_in_context_fusion:
           target: icm.models.decoder.in_context_fusion.InContextTransformer
           params:
@@ -78,11 +77,11 @@ model:
 data:
   target: icm.data.data_module.DataModuleFromConfig
   params:
-    batch_size: 8
+    batch_size: 2
     num_workers: 8
     shuffle_train: False
     train:
-      target: icm.data.data_generator.ContextDataset
+      target: icm.data.data_generator.InContextDataset
       params:
         crop_size: 512
         phase: train
@@ -93,10 +92,10 @@ data:
             dataset_name: [
                 "open-images-test",
                 "open-images-validation",
-                "open-images-train_0",
+                # "open-images-train_0",
               ] # ["PPM", "AM2k", "RWP636", "P3M_val_np"]
     validation:
-      target: icm.data.data_generator.ContextDataset
+      target: icm.data.data_generator.InContextDataset
       params:
         crop_size: 512
         phase: val
@@ -108,12 +107,12 @@ data:
               [
                 "open-images-test",
                 "open-images-validation",
-                "open-images-train_0",
+                # "open-images-train_0",
               ]
 
 trainer:
   accelerator: "ddp"
-  gpus: 4
+  gpus: 1
   max_epochs: 1000
   auto_select_gpus: False
   num_sanity_val_steps: 0
@@ -139,5 +138,5 @@ trainer:
         every_n_epochs: 1
         # save_last: True
         # save_weights_only: False
-        filename: "{epoch:02d}-{val/mse_all:.5f}-{val/mse_unknown:.5f}"
+        filename: "{epoch:02d}-{val/mse_all:.5f}"
         auto_insert_metric_name: False

@@ -1,1 +1,1 @@
-from .loss_function import MattingCriterion
+from .loss_function import LossFunction

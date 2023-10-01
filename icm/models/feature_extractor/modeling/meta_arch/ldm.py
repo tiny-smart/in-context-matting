@@ -590,9 +590,10 @@ class LdmExtractor(FeatureExtractor):
         # latent_image = self.ldm.encode_to_latent(normalized_image)
         latent_image, encoder_features = self.encode_to_latent(
             normalized_image)
-        cond_inputs = batched_inputs.get(
-            "cond_inputs", self.ldm.embed_text(captions))
-
+        # cond_inputs = batched_inputs.get(
+        #     "cond_inputs", self.ldm.embed_text(captions))
+        cond_inputs = batched_inputs["cond_inputs"] if "cond_inputs" in batched_inputs else self.ldm.embed_text(
+            captions)
         unet_features = []
         for i, t in enumerate(self.steps):
 
@@ -791,7 +792,7 @@ class LdmImplicitCaptionerExtractorUnetOnly(nn.Module):
 
         return self.ldm_extractor(batched_inputs)
     
-    def get_trainable_params():
+    def get_trainable_params(self):
         return []
     
     def get_reference_feature(self, images):

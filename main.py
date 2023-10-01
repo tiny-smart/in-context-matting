@@ -29,7 +29,7 @@ if __name__ == '__main__':
         parser.add_argument(
             "--debug",
             type=bool,
-            default=False,
+            default=True,
         )
         parser.add_argument(
             "--resume",
@@ -106,10 +106,10 @@ if __name__ == '__main__':
     cfg_trainer = OmegaConf.to_container(cfg_trainer)
 
     if args.debug:
-        # cfg_trainer['limit_train_batches'] = 2
+        cfg_trainer['limit_train_batches'] = 2
         # cfg_trainer['log_every_n_steps'] = 1
         # cfg_trainer['limit_val_batches'] = 3
-        cfg_trainer['overfit_batches'] = 2
+        # cfg_trainer['overfit_batches'] = 2
 
     # init logger
     cfg_logger = cfg_trainer.pop('cfg_logger')

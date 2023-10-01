@@ -99,7 +99,7 @@ class Matting_Head(nn.Module):
         return x
 
 # TODO: implement groupnorm and ws. In ODISE, bs=2, they work well; when bs = 1, mse loss will be nan, why?
-class Detail_Capture(nn.Module):
+class DetailCapture(nn.Module):
     """
     Simple and Lightweight Detail Capture Module for ViT Matting.
     """

@@ -88,6 +88,9 @@ class OneWayAttentionBlock(nn.Module):
         x = self.norm1(x)
         x = self.mlp(x) + x
         x = self.norm2(x)
+        
+        x = rearrange(x, "b (h w) c -> b c h w", h=feature_of_source_image.shape[2])
+        
         return x
 
 
