@@ -2,12 +2,20 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class MattingCriterion(nn.Module):
+from torchvision.ops import focal_loss
+
+class LossFunction(nn.Module):
+    '''
+    Loss function set
+    losses=['unknown_l1_loss', 'known_l1_loss',
+            'loss_pha_laplacian', 'loss_gradient_penalty',
+            'smooth_l1_loss', 'cross_entropy_loss', 'focal_loss']
+    '''
     def __init__(self,
                  *,
                  losses,
                  ):
-        super(MattingCriterion, self).__init__()
+        super(LossFunction, self).__init__()
         self.losses = losses
 
     def loss_gradient_penalty(self, sample_map ,preds, targets):
@@ -62,7 +70,23 @@ class MattingCriterion(nn.Module):
         loss = F.l1_loss(preds['phas']*new_sample_map, targets['phas']*new_sample_map)*scale
         return dict(known_l1_loss=loss)
 
+    def smooth_l1_loss(self, preds, targets):
+        assert 'phas' in preds and 'phas' in targets
+        loss = F.smooth_l1_loss(preds['phas'], targets['phas'])
 
+        return dict(smooth_l1_loss=loss)
+
+    def cross_entropy_loss(self, preds, targets):
+        assert 'phas' in preds and 'phas' in targets
+        loss = F.binary_cross_entropy_with_logits(preds['phas'], targets['phas'])
+
+        return dict(cross_entropy_loss=loss)
+    
+    def focal_loss(self, preds, targets):
+        assert 'phas' in preds and 'phas' in targets
+        loss = focal_loss.sigmoid_focal_loss(preds['phas'], targets['phas'], reduction='mean')
+
+        return dict(focal_loss=loss)
     def forward(self, sample_map, preds, targets):
         losses = dict()
         for k in self.losses:

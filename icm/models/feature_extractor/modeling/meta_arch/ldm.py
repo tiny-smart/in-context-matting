@@ -252,7 +252,7 @@ class LdmExtractor(FeatureExtractor):
         share_noise: bool = True,
         enable_resize: bool = False,
         init_checkpoint: Optional[str] = "sd://v1-3",
-        feature_inputted: bool = True,
+        extract_feature_inputted_to_layer: bool = True,
     ):
 
         super().__init__()
@@ -260,7 +260,7 @@ class LdmExtractor(FeatureExtractor):
         self.encoder_block_indices = encoder_block_indices
         self.unet_block_indices = unet_block_indices
         self.decoder_block_indices = decoder_block_indices
-        self.feature_inputted = feature_inputted
+        self.extract_feature_inputted_to_layer = extract_feature_inputted_to_layer
         self.steps = steps
 
         if ldm is not None:
@@ -506,10 +506,10 @@ class LdmExtractor(FeatureExtractor):
         h = unet.middle_block(h, emb, context)
         for module in unet.output_blocks:
             h = torch.cat([h, hs.pop()], dim=1)
-            if module in self.unet_blocks and self.feature_inputted:
+            if module in self.unet_blocks and self.extract_feature_inputted_to_layer:
                 ret_features.append(h.contiguous())
             h = module(h, emb, context)
-            if module in self.unet_blocks and (not self.feature_inputted):
+            if module in self.unet_blocks and (not self.extract_feature_inputted_to_layer):
                 ret_features.append(h.contiguous())
         # h = h.type(x.dtype)
         return unet.out(h), ret_features
@@ -647,8 +647,8 @@ class LdmExtractor(FeatureExtractor):
             for idx in indices:
                 if self.image_preprocess is not None:
                     continue
-                # check only work for feature_inputted
-                if self.feature_inputted:
+                # check only work for extract_feature_inputted_to_layer
+                if self.extract_feature_inputted_to_layer:
 
                     assert image.shape[-2] // self.feature_strides[idx] == features[idx].shape[-2]
                     assert image.shape[-1] // self.feature_strides[idx] == features[idx].shape[-1]
@@ -756,127 +756,46 @@ class LdmImplicitCaptionerExtractor(nn.Module):
         for p in self.ldm_extractor.ldm.ldm.model.parameters():
             p.requires_grad = requires_grad
             
-class LdmImplicitCaptionerExtractorOnlyUnet(nn.Module):
+class LdmImplicitCaptionerExtractorUnetOnly(nn.Module):
     def __init__(
         self,
-        freeze_all_params=False, # 
-        feature_index=5, # to implement
+        feature_index=5,
         **kwargs,
     ):
         super().__init__()
 
         self.ldm_extractor = LdmExtractor(**kwargs)
-
-        self.text_embed_shape = self.ldm_extractor.ldm.embed_text([
-                                                                  ""]).shape[1:]
-
-        if freeze_all_params:
-            self._freeze()
+        self.feature_index = feature_index
+        self.register_buffer("uc", self.ldm_extractor.ldm.ldm.get_learned_conditioning([""]))
         
-        self.uc = self.ldm_extractor.ldm.ldm.get_learned_conditioning([""])
         del self.ldm_extractor.ldm.ldm.cond_stage_model
         
-    def forward(self, batched_inputs):
-        """
-        Args:
-            batched_inputs (dict): expected keys: "img", Optional["caption"]
-
-        """
-        image = batched_inputs["img"]
-
-        prefix = self.clip.embed_image(image).image_embed
-        prefix_embed = self.clip_project(prefix)
-        batched_inputs["cond_inputs"] = (
-            self.ldm_extractor.ldm.uncond_inputs +
-            torch.tanh(self.alpha_cond) * prefix_embed
-        )
-
-        if self.learnable_time_embed:
-            batched_inputs["cond_emb"] = torch.tanh(
-                self.alpha_cond_time_embed
-            ) * self.time_embed_project(prefix)
-
-        self.set_requires_grad(self.training)
-
-        return self.ldm_extractor(batched_inputs)
-
-    def set_requires_grad(self, requires_grad):
-        for p in self.ldm_extractor.ldm.ldm.model.parameters():
-            p.requires_grad = requires_grad
+        self.__freeze_model()
+        
 
     def reset_dim_stride(self):
         self.ldm_extractor.reset_dim_stride()
-        self.ldm_extractor._freeze()
 
-    def _freeze(self):
+    def __freeze_model(self):
         super().train(mode=False)
         for p in self.parameters():
             p.requires_grad = False
-
-    def get_trainable_params(self):
-        '''
-        alpha_cond
-        alpha_cond_time_embed
-        clip_project.positional_embedding
-        clip_project.linear.weight
-        clip_project.linear.bias
-        time_embed_project.positional_embedding
-        time_embed_project.linear.weight
-        time_embed_project.linear.bias
-        '''
-        
-        name_list = ['alpha_cond', 'alpha_cond_time_embed', 'clip_project.positional_embedding',
-                     'clip_project.linear.weight', 'clip_project.linear.bias', 'time_embed_project.positional_embedding',
-                     'time_embed_project.linear.weight', 'time_embed_project.linear.bias']
-        trainable_parameters = []
-        for name, param in self.named_parameters():
-            if name in name_list:
-                trainable_parameters.append(param)
-                # set requires_grad to True
-                param.requires_grad = True
-        return trainable_parameters
     
-    def forward_for_attention(self, batched_inputs, use_odise_setting=True, prompt=None, t=None):
-        if use_odise_setting:
-            # assert prompt is None and t is None
-            return self(batched_inputs)
-        else:
-            assert prompt is not None and t is not None
-            if prompt == "IMAGE":
-                image = batched_inputs["img"]
-
-                prefix = self.clip.embed_image(image).image_embed
-                prefix_embed = self.clip_project(prefix)
-                batched_inputs["cond_inputs"] = (
-                    self.ldm_extractor.ldm.uncond_inputs +
-                    torch.tanh(self.alpha_cond) * prefix_embed
-                )
-            else:    
-                image = batched_inputs["img"]
-                batched_inputs["cond_inputs"] = self.ldm_extractor.ldm.ldm.get_learned_conditioning(prompt).repeat(image.shape[0], 1, 1)
-            
-            batched_inputs["t"] = t
-            
-            return self.ldm_extractor(batched_inputs)
     
-    def forward_cut(self, batched_inputs):
+    def forward(self, images):
 
-  
-        image = batched_inputs["img"]
-        uc = self.uc.to(image.device)
-        batched_inputs["cond_inputs"] = uc.repeat(image.shape[0], 1, 1)
+        batched_inputs = {}
         
+        batched_inputs["img"] = images
+        batched_inputs["cond_inputs"] = self.uc.repeat(images.shape[0], 1, 1)
+
         return self.ldm_extractor(batched_inputs)
     
     def get_trainable_params():
-        pass
+        return []
     
-    def reset_dim_stride():
-        pass
+    def get_reference_feature(self, images):
+        return self(images)[self.feature_index].detach()
     
-    def get_reference_feature():
-        pass
-    
-    def get_source_feature(tensor):
-        #detach()
-        pass
+    def get_source_feature(self, images):
+        return self(images)[self.feature_index].detach()

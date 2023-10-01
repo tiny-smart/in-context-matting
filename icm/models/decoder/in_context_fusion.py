@@ -199,7 +199,7 @@ class InContextTransformer(nn.Module):
                  n_heads,
                  d_head,
                  mlp_dim_rate,
-                 in_context_type='embed',
+
                  ):
         super().__init__()
         

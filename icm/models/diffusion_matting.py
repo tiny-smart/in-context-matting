@@ -2,7 +2,7 @@ from typing import Optional
 from pytorch_lightning.utilities.types import STEP_OUTPUT
 from torch import nn
 from torch.optim.optimizer import Optimizer
-from icm.models.criterion.matting_criterion import MattingCriterion
+from icm.models.criterion.loss_function import MattingCriterion
 from icm.models.criterion.matting_criterion_eval import compute_mse_loss, compute_sad_loss, compute_connectivity_error, compute_gradient_loss, compute_mse_loss_torch, compute_sad_loss_torch
 from icm.util import instantiate_from_config, instantiate_feature_extractor
 import pytorch_lightning as pl
