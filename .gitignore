@@ -1,6 +1,6 @@
 .*
 !/.gitignore
-
+!/.gitattributes
 reference_code/
 __pycache__/
 logs/

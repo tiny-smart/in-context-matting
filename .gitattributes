@@ -1,0 +1,2 @@
+readme.txt merge=ours
+/common/src/main/resources/application.yml merge=ours
