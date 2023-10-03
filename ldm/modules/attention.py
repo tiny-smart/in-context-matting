@@ -212,6 +212,7 @@ class MemoryEfficientCrossAttention(nn.Module):
 
         self.to_out = nn.Sequential(nn.Linear(inner_dim, query_dim), nn.Dropout(dropout))
         self.attention_op: Optional[Any] = None
+        self.scale = dim_head ** -0.5
 
     def forward(self, x, context=None, mask=None):
         q = self.to_q(x)
