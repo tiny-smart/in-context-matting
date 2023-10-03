@@ -24,7 +24,7 @@ if __name__ == '__main__':
             type=str,
             # "diffusion_matte-train_adapter_params_True-bs_2",
             # "in_context_matting-0.1",
-            default="in_context_matting",
+            default="in_context_matting-trans-conv",
         )
         parser.add_argument(
             "--debug",
@@ -36,7 +36,7 @@ if __name__ == '__main__':
             type=str,
             # default='logs/2023-09-12_19-21-22-in_context_matting-1.0-2waytransformer_norm_ff_4lr/checkpoints/10-0.01410-0.03703.ckpt',
             # default="logs/2023-09-27_11-43-30-in_context_matting-openimages-l1loss-1waytrans-kvembed-deft/checkpoints/01-0.07059-0.22562.ckpt",
-            default="logs/2023-10-01_12-45-16-in_context_matting/checkpoints/07-0.05928.ckpt",
+            default="",
         )
         parser.add_argument(
             "--fine_tune",
@@ -47,8 +47,8 @@ if __name__ == '__main__':
             "--config",
             type=str,
             # default="config/train_diffusion_matting.yaml"
-            # default="config/train_in_context_matting_transformer.yaml",
-            default="config/train_in_context_matting_correspondence.yaml",
+            default="config/train_in_context_matting_transformer.yaml",
+            # default="config/train_in_context_matting_correspondence.yaml",
         )
         parser.add_argument(
             "--logdir",

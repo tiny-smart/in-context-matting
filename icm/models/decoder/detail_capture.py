@@ -157,3 +157,33 @@ class DetailCapture(nn.Module):
 
         return phas
     
+class MaskDecoder(nn.Module):
+    '''
+    use trans-conv to decode mask
+    '''
+    def __init__(
+        self,
+        in_chans = 384,
+    ):
+        super().__init__()
+        self.output_upscaling = nn.Sequential(
+            nn.ConvTranspose2d(in_chans, in_chans // 4, kernel_size=2, stride=2),
+            # LayerNorm2d(in_chans // 4),
+            nn.BatchNorm2d(in_chans // 4),
+            nn.ReLU(),
+            nn.ConvTranspose2d(in_chans // 4, in_chans // 8, kernel_size=2, stride=2),
+            nn.BatchNorm2d(in_chans // 8),
+            nn.ReLU(),       
+        )
+        
+        self.matting_head = Matting_Head(
+            in_chans = in_chans // 8,
+        )
+        
+    def forward(self, x, images):
+        x = F.interpolate(x, scale_factor=2, mode='bilinear', align_corners=False)
+        x = self.output_upscaling(x)
+        x = self.matting_head(x)
+        x = torch.sigmoid(x)
+        x = F.interpolate(x, scale_factor=2, mode='bilinear', align_corners=False)
+        return x

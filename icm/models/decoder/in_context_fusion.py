@@ -95,6 +95,56 @@ class OneWayAttentionBlock(nn.Module):
         
         return x
 
+class OneWayAttentionBlockFixedValue(nn.Module):
+    def __init__(
+        self,
+        dim,
+        n_heads,
+        d_head,
+        mlp_dim_rate,
+    ):
+        super().__init__()
+
+        self.attn = Attention(dim, n_heads, downsample_rate=dim//d_head)
+
+        self.norm1 = nn.LayerNorm(dim)
+
+        self.mlp = MLPBlock(dim, int(dim*mlp_dim_rate))
+
+        self.norm2 = nn.LayerNorm(dim)
+
+        self.context_embed = nn.Embedding(2, dim)
+        self.bg_embedding = nn.Embedding(1, dim)
+
+    def forward(self, feature_of_reference_image, feature_of_source_image, guidance_on_reference_image):
+        h, w = feature_of_reference_image.shape[2:]
+        x = rearrange(feature_of_source_image, "b c h w -> b (h w) c").contiguous()
+        
+        # k: fg-src, bg-sec+bg_embedding
+        # v: fg_embedding_v,bg_embedding_v
+
+        # compute context_v
+        context_v = self.context_embed(guidance_on_reference_image.squeeze(
+                1).long()).permute(0, 3, 1, 2)
+        context_v = context_v.reshape(
+            context_v.shape[0], context_v.shape[1], -1).permute(0, 2, 1)
+
+        # compute context_k
+        embedding_k = torch.matmul((1.0-guidance_on_reference_image.squeeze(
+            1).unsqueeze(3).long()), self.bg_embedding.weight)
+        context_k = feature_of_reference_image + embedding_k.permute(0, 3, 1, 2)
+        context_k = context_k.reshape(
+            context_k.shape[0], context_k.shape[1], -1).permute(0, 2, 1)
+
+        x = self.attn(q=x, k=context_k, v=context_v) + x
+        x = self.norm1(x)
+        x = self.mlp(x) + x
+        x = self.norm2(x)
+        
+        x = rearrange(x, "b (h w) c -> b c h w", h=h, w=w).contiguous()
+        
+        return x
+    
 
 class TwoWayAttentionBlock(nn.Module):
     def __init__(
@@ -206,11 +256,12 @@ class InContextTransformer(nn.Module):
                  mlp_dim_rate,
                  use_bottle_neck=False,
                  bottle_neck_dim=512,
+                 attn_cls=OneWayAttentionBlock,
                  ):
         super().__init__()
         
         
-        self.attn = OneWayAttentionBlock(
+        self.attn = attn_cls(
             in_dim, n_heads, d_head, mlp_dim_rate) if not use_bottle_neck else OneWayAttentionBlock(bottle_neck_dim, n_heads, d_head, mlp_dim_rate)
         
         self.use_bottle_neck = use_bottle_neck
