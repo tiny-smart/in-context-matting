@@ -157,6 +157,9 @@ class DetailCapture(nn.Module):
 
         return phas
     
+    def get_trainable_params(self):
+        return list(self.parameters())
+    
 class MaskDecoder(nn.Module):
     '''
     use trans-conv to decode mask
