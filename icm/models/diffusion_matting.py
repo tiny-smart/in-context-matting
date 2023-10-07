@@ -27,13 +27,13 @@ class DiffusionMatting(pl.LightningModule):
         self.guidance_type = guidance_type
         self.learning_rate = learning_rate
 
-        self.scheduler_config = cfg_scheduler
+        self.cfg_scheduler = cfg_scheduler
 
         self.loss_function = instantiate_from_config(cfg_loss_function)
 
     def forward(self, images, images_guidance):
         x = self.feature_extractor.get_source_feature(images)
-        x = self.diffusion_decoder(x, images_guidance)
+        x = self.decoder(x, images_guidance)
         return x
     
     def on_train_start(self):
@@ -77,7 +77,7 @@ class DiffusionMatting(pl.LightningModule):
         else:
             raise NotImplementedError
 
-    def __shared_step(self, batch, batch_idx):
+    def __shared_step(self, batch):
         images, labels, trimaps = batch["image"], batch["alpha"], batch["trimap"]
 
         guidance_map = self.__get_guidance_map(trimaps, labels)

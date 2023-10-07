@@ -746,8 +746,10 @@ class MultiDataGeneratorDoubleSet(Dataset):
             return 'RWP636'
         elif image_name.startswith('p_'):
             return 'P3M'
+        
         else:
-            raise ValueError('image_name {} not recognized'.format(image_name))
+            # raise ValueError('image_name {} not recognized'.format(image_name))
+            return 'RM1k'
         
 class ContextDataset(Dataset):
     # divide a dataset into train set and validation set
