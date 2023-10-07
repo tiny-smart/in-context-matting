@@ -213,6 +213,15 @@ def get_dir_ext(dataset):
         merged_ext = '.jpg'
         alpha_ext = '.png'
         trimap_ext = '.png'
+    elif dataset == 'ICM+AIM':
+
+        image_dir = '/data1/guohe/ImageMatting/Combined_Dataset/ICM+AIM/original'
+        label_dir = '/data1/guohe/ImageMatting/Combined_Dataset/ICM+AIM/mask'
+        trimap_dir = '/data1/guohe/ImageMatting/Combined_Dataset/ICM+AIM/trimap'
+
+        merged_ext = '.jpg'
+        alpha_ext = '.png'
+        trimap_ext = '.png'
     return image_dir, label_dir, trimap_dir, merged_ext, alpha_ext, trimap_ext
 
 class MultiImageFile(object):

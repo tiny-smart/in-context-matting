@@ -10,7 +10,9 @@ from torch import Tensor, nn
 import math
 from typing import Tuple, Type
 
-
+import os
+import numpy as np
+from PIL import Image
 
 class TwoWayTransformer(nn.Module):
     def __init__(
@@ -229,8 +231,10 @@ class Attention(nn.Module):
         _, _, _, c_per_head = q.shape
         attn = q @ k.permute(0, 1, 3, 2)  # B x N_heads x N_tokens x N_tokens
         attn = attn / math.sqrt(c_per_head)
-        attn = torch.softmax(attn, dim=-1)
-
+        attn = torch.softmax(attn, dim=-1) # [b,head,token,token]
+        
+        # save_attn_map(attn)
+        
         # Get output
         out = attn @ v
         out = self._recombine_heads(out)
@@ -269,3 +273,55 @@ class LayerNorm2d(nn.Module):
         x = (x - u) / torch.sqrt(s + self.eps)
         x = self.weight[:, None, None] * x + self.bias[:, None, None]
         return x
+
+
+# watch attn map
+def view_images(images, num_rows=1, offset_ratio=0.02):
+    if type(images) is list:
+        num_empty = len(images) % num_rows
+    elif images.ndim == 4:
+        num_empty = images.shape[0] % num_rows
+    else:
+        images = [images]
+        num_empty = 0
+
+    empty_images = np.ones(images[0].shape, dtype=np.uint8) * 255
+    images = [image.astype(np.uint8) for image in images] + [empty_images] * num_empty
+    num_items = len(images)
+
+    h, w, c = images[0].shape
+    offset = int(h * offset_ratio)
+    num_cols = num_items // num_rows
+    image_ = np.ones((h * num_rows + offset * (num_rows - 1),
+                      w * num_cols + offset * (num_cols - 1), 3), dtype=np.uint8) * 255
+    for i in range(num_rows):
+        for j in range(num_cols):
+            image_[i * (h + offset): i * (h + offset) + h:, j * (w + offset): j * (w + offset) + w] = images[
+                i * num_cols + j]
+
+    pil_img = Image.fromarray(image_)
+    return pil_img
+    
+def save_attn_map(attn, path='attn_map/'):
+    # attn [b,head,token,token] Tensor
+    assert attn.shape[0] == 1
+    # average head
+    attn = attn.mean(1)
+    attn = attn.reshape(attn.shape[0], int(math.sqrt(attn.shape[2])), int(math.sqrt(attn.shape[2])),attn.shape[1])
+    attn = attn.permute(0,3,1,2).squeeze(0)
+    
+    if not os.path.exists(path):
+        os.makedirs(path)
+
+    images = []
+    for i in range(attn.shape[0]):
+        image = attn[i].cpu().detach().numpy()
+        image = image - image.min()
+        image = 255 * image / image.max()
+        image = np.repeat(np.expand_dims(image, axis=2),
+                          3, axis=2).astype(np.uint8)
+        image = Image.fromarray(image).resize((256, 256))
+        image = np.array(image)
+        images.append(image)
+    images_saved = view_images(np.concatenate(images, axis=1))
+    images_saved.save(path + 'attn.png')

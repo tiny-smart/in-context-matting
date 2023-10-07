@@ -1,16 +1,14 @@
 data:
   target: icm.data.data_module.DataModuleFromConfig
   params:
-    # train_batch_size is set here, validation_batch_size is 1
-    batch_size: 8
-    # train_loader_num_workers is set here, validation_loader_num_workers is 0
-    num_workers: 0
+    batch_size: 2
+    num_workers: 2
     shuffle_train: False
     validation:
-      target: icm.data.data_generator.ContextDataset
+      target: icm.data.data_generator.InContextDataset
       params:
         crop_size: 512
-        phase: val
+        phase: train
         data:
           target: icm.data.image_file.ContextData
           params:
