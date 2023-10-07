@@ -59,27 +59,27 @@ model:
       target: icm.models.decoder.in_context_decoder.InContextDecoder
       params:
         freeze_in_context_fusion: False # True for finetuning
+        cfg_detail_decoder:
+          target: icm.models.decoder.detail_capture.DetailCapture
+          params:
+            in_chans: 260
+            img_chans: 3
+            convstream_out: [48, 96, 192]
+            fusion_out: [256, 128, 64, 32]
         # cfg_detail_decoder:
-        #   target: icm.models.decoder.detail_capture.DetailCapture
+        #   target: icm.models.decoder.detail_capture.MaskDecoder
         #   params:
         #     in_chans: 480
-        #     img_chans: 3
-        #     convstream_out: [48, 96, 192]
-        #     fusion_out: [256, 128, 64, 32]
-        cfg_detail_decoder:
-          target: icm.models.decoder.detail_capture.MaskDecoder
-          params:
-            in_chans: 480
         cfg_in_context_fusion:
-          target: icm.models.decoder.in_context_fusion.InContextTransformer
+          target: icm.models.decoder.in_context_fusion.InContextTransformer2
           params:
             in_dim: 1280
-            n_heads: 4
+            n_heads: 2
             d_head: 120
-            mlp_dim_rate: 1
+            mlp_dim_rate: 0.5
             use_bottle_neck: True
-            bottle_neck_dim: 480
-            attn_cls: OneWayAttentionBlockFixedValue
+            bottle_neck_dim: 256
+            mask_dim: 4
 
 data:
   target: icm.data.data_module.DataModuleFromConfig
