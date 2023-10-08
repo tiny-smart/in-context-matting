@@ -727,7 +727,7 @@ class MultiDataGeneratorDoubleSet(Dataset):
 
         image = cv2.imread(self.merged[idx])
         alpha = cv2.imread(self.alpha[idx], 0)/255.
-        trimap = cv2.imread(self.trimap[idx], 0)
+        trimap = cv2.imread(self.trimap[idx], 0).astype(np.float32)
         mask = (trimap >= 170).astype(np.float32)
         image_name = os.path.split(self.merged[idx])[-1]
 
@@ -837,7 +837,7 @@ class ContextDataset(Dataset):
 
         image = cv2.imread(image_path)
         alpha = cv2.imread(label_path, 0)/255.
-        trimap = cv2.imread(trimap_path, 0)
+        trimap = cv2.imread(trimap_path, 0).astype(np.float32)
         mask = (trimap >= 170).astype(np.float32)
         image_name = os.path.split(image_path)[-1]
 
@@ -925,7 +925,7 @@ class InContextDataset(Dataset):
 
         image = cv2.imread(image_path)
         alpha = cv2.imread(label_path, 0)/255.
-        trimap = cv2.imread(trimap_path, 0)
+        trimap = cv2.imread(trimap_path, 0).astype(np.float32)
         mask = (trimap >= 170).astype(np.float32)
         image_name = os.path.split(image_path)[-1]
 
