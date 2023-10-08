@@ -36,10 +36,11 @@ class ToTensor(object):
     Convert ndarrays in sample to Tensors with normalization.
     """
 
-    def __init__(self, phase="test"):
+    def __init__(self, phase="test", norm_type='imagenet'):
         self.mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
         self.std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
         self.phase = phase
+        self.norm_type = norm_type
 
     def __call__(self, sample):
         # convert GBR images to RGB
@@ -55,13 +56,10 @@ class ToTensor(object):
         image = image.transpose((2, 0, 1)).astype(np.float32)
         alpha = np.expand_dims(alpha.astype(np.float32), axis=0)
         trimap[trimap < 85] = 0
-        trimap[trimap >= 170] = 2
-        trimap[trimap >= 85] = 1
+        trimap[trimap >= 170] = 1
+        trimap[trimap >= 85] = 0.5
 
         mask = np.expand_dims(mask.astype(np.float32), axis=0)
-
-        # normalize image
-        image /= 255.
 
         if self.phase == "train":
             # convert GBR images to RGB
@@ -76,8 +74,18 @@ class ToTensor(object):
         sample['image'], sample['alpha'], sample['trimap'] = \
             torch.from_numpy(image), torch.from_numpy(
                 alpha), torch.from_numpy(trimap).to(torch.long)
-        sample['image'] = sample['image'].sub_(self.mean).div_(self.std)
 
+        if self.norm_type == 'imagenet':
+            # normalize image
+            sample['image'] /= 255.
+            
+            sample['image'] = sample['image'].sub_(self.mean).div_(self.std)
+        elif self.norm_type == 'sd':
+            sample['image'] = sample['image'].to(dtype=torch.float32) / 127.5 - 1.0
+        else:
+            raise NotImplementedError(
+                "norm_type {} is not implemented".format(self.norm_type))
+            
         if TRIMAP_CHANNEL == 3:
             sample['trimap'] = F.one_hot(
                 sample['trimap'], num_classes=3).permute(2, 0, 1).float()
@@ -678,7 +686,7 @@ class DataGenerator(Dataset):
 
 class MultiDataGeneratorDoubleSet(Dataset):
     # divide a dataset into train set and validation set
-    def __init__(self, data, crop_size=1024, phase="train"):
+    def __init__(self, data, crop_size=1024, phase="train",norm_type='imagenet'):
         self.phase = phase
         self.crop_size = crop_size
         data = instantiate_from_config(data)
@@ -699,11 +707,11 @@ class MultiDataGeneratorDoubleSet(Dataset):
             # CutMask(perturb_prob=CUTMASK_PROB),
             CropResize((self.crop_size, self.crop_size)),
             # RandomJitter(),
-            ToTensor(phase="val")]
+            ToTensor(phase="val",norm_type=norm_type)]
 
         # val_trans = [ OriginScale(), ToTensor() ]
         val_trans = [CropResize(
-            (self.crop_size, self.crop_size)), ToTensor(phase="val")]
+            (self.crop_size, self.crop_size)), ToTensor(phase="val",norm_type=norm_type)]
 
         self.transform = {
             'train':
@@ -753,7 +761,7 @@ class MultiDataGeneratorDoubleSet(Dataset):
         
 class ContextDataset(Dataset):
     # divide a dataset into train set and validation set
-    def __init__(self, data, crop_size=1024, phase="train"):
+    def __init__(self, data, crop_size=1024, phase="train",norm_type='imagenet'):
         self.phase = phase
         self.crop_size = crop_size
         data = instantiate_from_config(data)
@@ -777,11 +785,11 @@ class ContextDataset(Dataset):
             # CutMask(perturb_prob=CUTMASK_PROB),
             CropResize((self.crop_size, self.crop_size)),
             # RandomJitter(),
-            ToTensor(phase="val")]
+            ToTensor(phase="val",norm_type=norm_type)]
 
         # val_trans = [ OriginScale(), ToTensor() ]
         val_trans = [CropResize(
-            (self.crop_size, self.crop_size)), ToTensor(phase="val")]
+            (self.crop_size, self.crop_size)), ToTensor(phase="val",norm_type=norm_type)]
 
         self.transform = {
             'train':
@@ -841,7 +849,7 @@ class ContextDataset(Dataset):
 
 class InContextDataset(Dataset):
     # divide a dataset into train set and validation set
-    def __init__(self, data, crop_size=1024, phase="train"):
+    def __init__(self, data, crop_size=1024, phase="train",norm_type='imagenet'):
         self.phase = phase
         self.crop_size = crop_size
         data = instantiate_from_config(data)
@@ -865,11 +873,11 @@ class InContextDataset(Dataset):
             # CutMask(perturb_prob=CUTMASK_PROB),
             CropResize((self.crop_size, self.crop_size)),
             # RandomJitter(),
-            ToTensor(phase="val")]
+            ToTensor(phase="val",norm_type=norm_type)]
 
         # val_trans = [ OriginScale(), ToTensor() ]
         val_trans = [CropResize(
-            (self.crop_size, self.crop_size)), ToTensor(phase="val")]
+            (self.crop_size, self.crop_size)), ToTensor(phase="val",norm_type=norm_type)]
 
         self.transform = {
             'train':

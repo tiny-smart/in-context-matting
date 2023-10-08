@@ -75,6 +75,7 @@ data:
       params:
         crop_size: 512
         phase: train
+        norm_type: "imagenet" # "imagenet" or "sd"
         data:
           target: icm.data.image_file.MultiImageFileDoubleSet
           params:
@@ -95,6 +96,7 @@ data:
       params:
         crop_size: 512
         phase: val
+        norm_type: "imagenet" # "imagenet" or "sd"
         data:
           target: icm.data.image_file.MultiImageFileDoubleSet
           params:

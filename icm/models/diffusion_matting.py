@@ -67,7 +67,7 @@ class DiffusionMatting(pl.LightningModule):
         if self.guidance_type == "coarse_map":
             # make coarse mask, 0 for bg, 1 for fg and unknown
             coarse_mask = torch.zeros_like(trimaps)
-            coarse_mask[trimaps == 1] = 1
+            coarse_mask[trimaps == 0.5] = 1
             coarse_mask[labels > 0.5] = 1
             return coarse_mask
 
@@ -84,7 +84,10 @@ class DiffusionMatting(pl.LightningModule):
         images_guidance = torch.cat((images, guidance_map), dim=1)
 
         outputs = self(images, images_guidance)
-        loss_dict = self.loss_function(trimaps, outputs, labels)
+        sample_map = torch.zeros_like(trimaps)
+        sample_map[trimaps==0.5] = 1     
+        
+        loss_dict = self.loss_function(sample_map, outputs, labels)
 
         loss = sum(loss_dict.values())
 
@@ -105,7 +108,9 @@ class DiffusionMatting(pl.LightningModule):
         pred = preds[0].squeeze()*255.0
         image = batch['image'][0]
         label = batch["alpha"][0].squeeze()*255.0
-        trimap = batch["trimap"][0].squeeze()*128
+        trimap = batch["trimap"][0].squeeze()*255
+        
+        trimap[trimap == 127.5] = 128
 
         dataset_name = batch["dataset_name"][0]
         image_name = batch["image_name"][0].split('.')[0]

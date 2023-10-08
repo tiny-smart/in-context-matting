@@ -82,8 +82,11 @@ class InContextMatting(pl.LightningModule):
 
         outputs = self(reference_images,
                        guidance_on_reference_image, source_images)
-
-        loss_dict = self.loss_function(trimaps, outputs, labels)
+        
+        sample_map = torch.zeros_like(trimaps)
+        sample_map[trimaps==0.5] = 1     
+        
+        loss_dict = self.loss_function(sample_map, outputs, labels)
 
         loss = sum(loss_dict.values())
 
@@ -105,7 +108,8 @@ class InContextMatting(pl.LightningModule):
         pred = preds[0].squeeze()*255.0
         source_image = batch['source_image'][0]
         label = batch["alpha"][0].squeeze()*255.0
-        trimap = batch["trimap"][0].squeeze()*128
+        trimap = batch["trimap"][0].squeeze()*255.0
+        trimap[trimap == 127.5] = 128
         reference_image = batch["reference_image"][0]
         guidance_on_reference_image = batch["guidance_on_reference_image"][0]
         dataset_name = batch["dataset_name"][0]
