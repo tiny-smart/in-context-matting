@@ -73,7 +73,7 @@ class ToTensor(object):
 
         sample['image'], sample['alpha'], sample['trimap'] = \
             torch.from_numpy(image), torch.from_numpy(
-                alpha), torch.from_numpy(trimap).to(torch.long)
+                alpha), torch.from_numpy(trimap)
 
         if self.norm_type == 'imagenet':
             # normalize image
