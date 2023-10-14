@@ -132,7 +132,7 @@ class DetailCapture(nn.Module):
             in_chans = fusion_out[-1],
         )
         
-        if ckpt is not None and ckpt is not '':
+        if ckpt != None and ckpt != '':
             self.load_state_dict(ckpt['state_dict'], strict=False)
             print('load detail capture ckpt from', ckpt['path'])
 

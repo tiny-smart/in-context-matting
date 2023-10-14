@@ -40,7 +40,10 @@ def build_ldm_from_cfg(cfg_name) -> _LatentDiffusion:
         url_prefix = "https://raw.githubusercontent.com/Stability-AI/stablediffusion/main/configs/stable-diffusion/"  # noqa
 
     logging.getLogger(__name__).info(f"Loading LDM config from {cfg_name}")
-    config = OmegaConf.load(PathManager.open(url_prefix + cfg_name))
+    if cfg_name == "v2-inference-v.yaml":
+        config = OmegaConf.load("/data1/guohe/diffusion-matting/ICM/config/stable-diffusion/v2-inference-v.yaml")
+    else:
+        config = OmegaConf.load(PathManager.open(url_prefix + cfg_name))
     return instantiate_from_config(config.model)
 
 
@@ -72,7 +75,7 @@ class LatentDiffusion(nn.Module):
         "sd://v2-0-base": ("v2-inference.yaml", (512, 512), (64, 64)),
         "sd://v2-0-v": ("v2-inference.yaml", (768, 768), (96, 96)),
         "sd://v2-1-base": ("v2-inference.yaml", (512, 512), (64, 64)),
-        "sd://v2-1-v": ("v2-inference.yaml", (768, 768), (96, 96)),
+        "sd://v2-1-v": ("v2-inference-v.yaml", (768, 768), (96, 96)),
         "sd://x4-0-base": ("x4-upscaling.yaml", (2048, 2048), (512, 512)),
     }
 
@@ -124,7 +127,10 @@ class LatentDiffusion(nn.Module):
             pixel_std).view(-1, 1, 1), False)
 
     def load_pretrain(self):
-        LdmCheckpointer(self.ldm).load(self.init_checkpoint)
+        if self.init_checkpoint == 'sd://v2-1-v':
+            LdmCheckpointer(self.ldm).load("/data1/guohe/diffusion-matting/ICM/pretrained_models/v2-1_768-ema-pruned.ckpt")
+        else:
+            LdmCheckpointer(self.ldm).load(self.init_checkpoint)
 
     @property
     def device(self):
