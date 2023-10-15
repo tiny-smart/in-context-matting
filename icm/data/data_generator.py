@@ -846,7 +846,25 @@ class ContextDataset(Dataset):
 
         sample = self.transform(sample)
         return sample
+    def get_sample_example(self, image_dir, mask_dir, img_list, mask_list, index):
+        image = cv2.imread(os.path.join(image_dir, img_list[index]))
+        alpha = cv2.imread(os.path.join(mask_dir, mask_list[index]), 0)/255.
 
+        # resize alpha to image size
+        alpha = cv2.resize(alpha, (image.shape[1], image.shape[0]))
+
+        # unused
+        trimap = cv2.imread(os.path.join(mask_dir, mask_list[index]))/255.
+        mask = (trimap >= 170).astype(np.float32)
+        image_name = ''
+        dataset_name = ''
+        
+        sample = {'image': image, 'alpha': alpha, 'trimap': trimap,
+                  'mask': mask, 'image_name': image_name, 'alpha_shape': alpha.shape, 'dataset_name': dataset_name}
+
+        sample = self.transform(sample)
+        return sample['image'], sample['alpha']
+    
 class InContextDataset(Dataset):
     # divide a dataset into train set and validation set
     def __init__(self, data, crop_size=1024, phase="train",norm_type='imagenet'):

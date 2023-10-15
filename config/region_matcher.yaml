@@ -1,0 +1,38 @@
+cfg_feature_extractor:
+  load_odise_params: False # True only if init_ckpt is sd-v1.3
+  target: icm.models.feature_extractor.modeling.meta_arch.ldm.LdmImplicitCaptionerExtractorUnetOnly
+  params:
+    feature_index: 5
+    encoder_block_indices: [1, 3, 5, 7]
+    # 128*512*512 256*256*256 512*128*128 512*64*64
+    unet_block_indices: [2, 5, 8, 11]   # upsample in 2,5,8
+    # 2560*8*8 1920*16*16 960*32*32 640*64*64
+    decoder_block_indices: [2, 5, 8, 11]
+    # 512*64*64 512*128*128 256*256*256 128*512*512
+    steps: [261]
+    share_noise: False
+    init_checkpoint: "sd://v2-1-v"
+    extract_feature_inputted_to_layer: False # True: odise  False: DIFT
+
+    # "sd://v1-3": ("v1-inference.yaml", (512, 512), (64, 64)),
+    # "sd://v1-4": ("v1-inference.yaml", (512, 512), (64, 64)),
+    # "sd://v1-5": ("v1-inference.yaml", (512, 512), (64, 64)),
+    # "sd://v2-0-base": ("v2-inference.yaml", (512, 512), (64, 64)),
+    # "sd://v2-0-v": ("v2-inference.yaml", (768, 768), (96, 96)),
+    # "sd://v2-1-base": ("v2-inference.yaml", (512, 512), (64, 64)),
+    # "sd://v2-1-v": ("v2-inference.yaml", (768, 768), (96, 96)),
+    # "sd://x4-0-base": ("x4-upscaling.yaml", (2048, 2048), (512, 512)),
+
+cfg_dataset:
+  target: icm.data.data_generator.ContextDataset
+  params:
+    crop_size: 768 # new, same as dift
+    phase: val
+    norm_type: "sd" # new
+    data:
+      target: icm.data.image_file.ContextData
+      params:
+        ratio: 0.9
+        dataset_name:
+          ["PPM", ]
+          # ["PPM", "AM2k", "RWP636", "P3M_val_np"]
