@@ -9,7 +9,7 @@ if __name__ == '__main__':
     # os.environ["MKL_NUM_THREADS"] = "1"
     # os.environ["NUMEXPR_NUM_THREADS"] = "1"
     
-    os.environ["CUDA_VISIBLE_DEVICES"] = "2,3"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
     from icm.util import instantiate_from_config
     import torch
     from pytorch_lightning import Trainer, seed_everything
@@ -24,7 +24,7 @@ if __name__ == '__main__':
             type=str,
             # "diffusion_matte-train_adapter_params_True-bs_2",
             # "in_context_matting-0.1",
-            default="in_context_matting-samd",
+            default="in_context_matting-trainingfreeattn_open_images",
         )
         parser.add_argument(
             "--debug",
@@ -36,7 +36,7 @@ if __name__ == '__main__':
             type=str,
             # default='logs/2023-09-12_19-21-22-in_context_matting-1.0-2waytransformer_norm_ff_4lr/checkpoints/10-0.01410-0.03703.ckpt',
             # default="logs/2023-09-27_11-43-30-in_context_matting-openimages-l1loss-1waytrans-kvembed-deft/checkpoints/01-0.07059-0.22562.ckpt",
-            default="",
+            # default="logs/2023-10-16_09-27-01-in_context_matting-trainingfreeattn/checkpoints/02-0.00000.ckpt",
         )
         parser.add_argument(
             "--fine_tune",
@@ -47,7 +47,7 @@ if __name__ == '__main__':
             "--config",
             type=str,
             # default="config/train_diffusion_matting.yaml"
-            default="config/train_in_context_matting_transformer.yaml",
+            default="config/train_in_context_matting_training_free_attn.yaml",
             # default="config/train_in_context_matting_correspondence.yaml",
         )
         parser.add_argument(
@@ -148,5 +148,6 @@ if __name__ == '__main__':
     trainer.logger.log_hyperparams(cfg)
 
     """=== Start training ==="""
+
 
     trainer.fit(model, data)

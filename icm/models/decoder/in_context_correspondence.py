@@ -1,4 +1,5 @@
 
+from torch import einsum
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
@@ -185,3 +186,248 @@ class InContextCorrespondence(nn.Module):
         output['mask'] = mask_result
 
         return output
+
+
+class TrainingFreeAttention:
+    def __init__(self, res_ratio=4, pool_type='average', temp_softmax=1, use_scale=False, upsample_mode='bilinear') -> None:
+        self.res_ratio = res_ratio
+        self.pool_type = pool_type
+        self.temp_softmax = temp_softmax
+        self.use_scale = use_scale
+        self.upsample_mode = upsample_mode
+
+    def __call__(self, features, features_ref, roi_mask,):
+        # roi_mask: [B, 1, H, W]
+        # features: [B, C, h, w]
+        # features_ref: [B, C, h, w]
+        B, _, H, W = roi_mask.shape
+        H_attn, W_attn = H//self.res_ratio, W//self.res_ratio
+        features, features_ref = self.resize_input_to_res(
+            features, features_ref, (H, W))  # [H//res_ratio, W//res_ratio]
+
+        # List, len = B, each element: [C_q, dim], dim = H//res_ratio * W//res_ratio
+        features_ref = self.get_roi_features(features_ref, roi_mask)
+
+        features = features.reshape(
+            B, -1, features.shape[2] * features.shape[3]).permute(0, 2, 1)  # [B, C, dim]
+        # List, len = B, each element: [C_q, C]
+        attn_output = self.compute_attention(features, features_ref)
+
+        # List, len = B, each element: [C_q, H_attn, W_attn]
+        attn_output = self.reshape_attn_output(attn_output, (H_attn, W_attn))
+
+        return attn_output
+
+    def resize_input_to_res(self, features, features_ref, size):
+        # features: [B, C, h, w]
+        # features_ref: [B, C, h, w]
+        H, W = size
+        target_H, target_W = H//self.res_ratio, W//self.res_ratio
+        features = F.interpolate(features, size=(
+            target_H, target_W), mode=self.upsample_mode)
+        features_ref = F.interpolate(features_ref, size=(
+            target_H, target_W), mode=self.upsample_mode)
+        return features, features_ref
+
+    def get_roi_features(self, feature, mask):
+        '''
+        get feature tokens by maskpool
+        feature: [B, C, h, w]
+        mask: [B, 1, H, W]  [0,1]
+        return: List, len = B, each element: [token_num, C]
+        '''
+
+        # assert mask only has elements 0 and 1
+        assert torch.all(torch.logical_or(mask == 0, mask == 1))
+        assert mask.max() == 1 and mask.min() == 0
+
+        B, _, H, W = mask.shape
+        h, w = feature.shape[2:]
+
+        output = []
+        for i in range(B):
+            mask_ = mask[i]
+            feature_ = feature[i]
+            feature_ = self.maskpool(feature_, mask_)
+            output.append(feature_)
+        return output
+
+    def maskpool(self, feature, mask):
+        '''
+        get feature tokens by maskpool
+        feature: [C, h, w]
+        mask: [1, H, W]  [0,1]
+        return: [token_num, C]
+        '''
+
+        if self.pool_type == 'max':
+            mask = F.max_pool2d(mask, kernel_size=self.res_ratio,
+                                stride=self.res_ratio, padding=0)
+        elif self.pool_type == 'average':
+            mask = F.avg_pool2d(mask, kernel_size=self.res_ratio,
+                                stride=self.res_ratio, padding=0)
+        elif self.pool_type == 'min':
+            mask = -1*mask
+            mask = F.max_pool2d(mask, kernel_size=self.res_ratio,
+                                stride=self.res_ratio, padding=0)
+            mask = -1*mask
+        else:
+            raise NotImplementedError
+
+        # element-wise multiplication mask and feature
+        feature = feature * mask
+
+        index = (mask > 0).reshape(1, -1).squeeze()
+        feature = feature.reshape(feature.shape[0], -1).permute(1, 0)
+
+        feature = feature[index]
+        return feature
+
+    def compute_attention(self, features, features_ref):
+        '''
+        features: [B, C, dim]
+        features_ref: List, len = B, each element: [C_q, dim]
+        return: List, len = B, each element: [C_q, C]
+        '''
+        output = []
+        for i in range(len(features_ref)):
+            feature_ref = features_ref[i]
+            feature = features[i]
+            feature = self.compute_attention_single(feature, feature_ref)
+            output.append(feature)
+        return output
+
+    def compute_attention_single(self, feature, feature_ref):
+        '''
+        compute attention with softmax
+        feature: [C, dim]
+        feature_ref: [C_q, dim]
+        return: [C_q, C]
+        '''
+        scale = feature.shape[-1]**-0.5 if self.use_scale else 1.0
+        sim = einsum('i d, j d -> i j', feature_ref, feature)*scale
+        sim = sim/self.temp_softmax
+        sim = sim.softmax(dim=-1)
+        return sim
+
+    def reshape_attn_output(self, attn_output, attn_size):
+        '''
+        attn_output: List, len = B, each element: [C_q, C]
+        return: List, len = B, each element: [C_q, H_attn, W_attn]
+        '''
+        # attn_output[0].shape[1] sqrt to get H_attn, W_attn
+        H_attn, W_attn = attn_size
+
+        output = []
+        for i in range(len(attn_output)):
+            attn_output_ = attn_output[i]
+            attn_output_ = attn_output_.reshape(
+                attn_output_.shape[0], H_attn, W_attn)
+            output.append(attn_output_)
+        return output
+
+
+class TrainingFreeAttentionBlocks(nn.Module):
+    '''
+    one implementation of in_context_fusion
+
+    forward(feature_of_reference_image, feature_of_source_image, guidance_on_reference_image)
+    '''
+
+    def __init__(self,
+                 res_ratio=8,
+                 pool_type='min',
+                 temp_softmax=1000,
+                 use_scale=False,
+                 upsample_mode='bicubic',
+                 bottle_neck_dim=None,
+
+                 ):
+        super().__init__()
+
+        self.attn_module = TrainingFreeAttention(res_ratio=res_ratio,
+                                                 pool_type=pool_type,
+                                                 temp_softmax=temp_softmax,
+                                                 use_scale=use_scale,
+                                                 upsample_mode=upsample_mode)
+
+    def forward(self, feature_of_reference_image, ft_attn_of_source_image, guidance_on_reference_image):
+        '''
+        feature_of_reference_image: [B, C, H, W]
+        ft_attn_of_source_image: {"ft_cor": [B, C, H, W], "attn": [B, H_1, W_1, H_1*W_1], "ft_matting": [B, C, H, W]}
+        guidance_on_reference_image: [B, 1, H_2, W_2]
+        '''
+        assert feature_of_reference_image.shape[0] == 1 
+        # get source_image h,w
+        h, w = guidance_on_reference_image.shape[-2:]
+
+        features_cor = ft_attn_of_source_image['ft_cor']
+        features_matting = ft_attn_of_source_image['ft_matting']
+        features_ref = feature_of_reference_image
+
+        guidance_on_reference_image[guidance_on_reference_image > 0.5] = 1
+        guidance_on_reference_image[guidance_on_reference_image <= 0.5] = 0
+        attn_output = self.attn_module(
+            features_cor, features_ref, guidance_on_reference_image)
+        
+        
+        attn_output = attn_output[0].sum(dim=0).unsqueeze(0).unsqueeze(0)
+
+        self_attn_output = self.training_free_self_attention(
+            attn_output, ft_attn_of_source_image['attn'])
+
+        # resize
+        self_attn_output = F.interpolate(
+            self_attn_output, size=(h, w), mode='bilinear')
+
+        output = {}
+        output['trimap'] = self_attn_output
+        output['feature'] = features_matting
+        output['mask'] = attn_output
+
+        return output
+
+    def training_free_self_attention(self, x, self_attn_maps):
+        '''
+        Compute self-attention using the attention maps.
+
+        Parameters:
+        x (torch.Tensor): The input tensor. Shape: [B, 1, H, W]
+        self_attn_maps (torch.Tensor): The attention maps. Shape: [B, H1, W1, H1*W1]
+
+        Returns:
+        torch.Tensor: The result of the self-attention computation.
+        '''
+
+        # Original dimensions of x
+        # Assuming x's shape is [B, 1, H, W] based on your comment
+        B, _, H, W = x.shape
+
+        # Dimensions of the attention maps
+        _, H1, W1, _ = self_attn_maps.shape
+
+        # Resize x to match the spatial dimensions of the attention maps
+        # You might need align_corners depending on your version of PyTorch
+        x = F.interpolate(x, size=(H1, W1), mode='bilinear',
+                          align_corners=True)
+
+        # Reshape the attention maps and x for matrix multiplication
+        # Reshaping from [B, H1, W1, H1*W1] to [B, H1*W1, H1*W1]
+        self_attn_maps = self_attn_maps.view(B, H1 * W1, H1 * W1)
+        # Reshaping from [B, 1, H1, W1] to [B, 1, H1*W1]
+        x = x.view(B, 1, H1 * W1)
+
+        # Apply the self-attention mechanism
+        # Matrix multiplication between the attention maps and the input feature map
+        # This step essentially computes the weighted sum of feature vectors in the input,
+        # where the weights are defined by the attention maps.
+        # Multiplying with the transpose to get shape [B, 1, H1*W1]
+        out = torch.matmul(x, self_attn_maps.transpose(1, 2))
+
+        # Reshape the output tensor to the original spatial dimensions
+        out = out.view(B, 1, H1, W1)  # Reshaping back to spatial dimensions
+
+        # # Resize the output back to the input's original dimensions (if necessary)
+        # out = F.interpolate(out, size=(H, W), mode='bilinear', align_corners=True)
+
+        return out

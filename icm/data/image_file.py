@@ -109,11 +109,11 @@ dataset = {'AIM', 'PPM', 'AM2k_train', 'AM2k_val',
 
 
 def get_dir_ext(dataset):
-    if dataset == 'AIM':
+    if dataset in ['AIM', 'AIM-ICM']:
 
-        image_dir = '/data/guohe/dataset/AIM-500/original'
-        label_dir = '/data/guohe/dataset/AIM-500/mask'
-        trimap_dir = '/data/guohe/dataset/AIM-500/trimap'
+        image_dir = '/data1/guohe/ImageMatting/Combined_Dataset/AIM-500/original'
+        label_dir = '/data1/guohe/ImageMatting/Combined_Dataset/AIM-500/mask'
+        trimap_dir = '/data1/guohe/ImageMatting/Combined_Dataset/AIM-500/trimap'
 
         merged_ext = '.jpg'
         alpha_ext = '.png'
@@ -204,30 +204,30 @@ def get_dir_ext(dataset):
         merged_ext = '.jpg'
         alpha_ext = '.png'
         trimap_ext = '.png'
-    elif dataset == 'AIM-ICM':
+    # elif dataset == 'AIM-ICM':
 
-        image_dir = '/data/guohe/dataset/AIM-ICM/original'
-        label_dir = '/data/guohe/dataset/AIM-ICM/mask'
-        trimap_dir = '/data/guohe/dataset/AIM-ICM/trimap'
+    #     image_dir = '/data1/guohe/ImageMatting/Combined_Dataset/AIM-ICM/original'
+    #     label_dir = '/data1/guohe/ImageMatting/Combined_Dataset/AIM-ICM/mask'
+    #     trimap_dir = '/data1/guohe/ImageMatting/Combined_Dataset/AIM-ICM/trimap'
 
-        merged_ext = '.jpg'
-        alpha_ext = '.png'
-        trimap_ext = '.png'
-    elif dataset == 'ICM+AIM':
+    #     merged_ext = '.jpg'
+    #     alpha_ext = '.png'
+    #     trimap_ext = '.png'
 
-        image_dir = '/data/guohe/dataset/ICM+AIM/original'
-        label_dir = '/data/guohe/dataset/ICM+AIM/mask'
-        trimap_dir = '/data/guohe/dataset/ICM+AIM/trimap'
-
-        merged_ext = '.jpg'
-        alpha_ext = '.png'
-        trimap_ext = '.png'
     elif dataset == 'ICM+AIM':
 
         image_dir = '/data1/guohe/ImageMatting/Combined_Dataset/ICM+AIM/original'
         label_dir = '/data1/guohe/ImageMatting/Combined_Dataset/ICM+AIM/mask'
         trimap_dir = '/data1/guohe/ImageMatting/Combined_Dataset/ICM+AIM/trimap'
 
+        merged_ext = '.jpg'
+        alpha_ext = '.png'
+        trimap_ext = '.png'
+    elif dataset in ['ICM57', 'ICM']:
+        image_dir = '/data1/guohe/ImageMatting/Combined_Dataset/ICM57/image'
+        label_dir = '/data1/guohe/ImageMatting/Combined_Dataset/ICM57/alpha'
+        trimap_dir = '/data1/guohe/ImageMatting/Combined_Dataset/ICM57/trimap'
+        
         merged_ext = '.jpg'
         alpha_ext = '.png'
         trimap_ext = '.png'

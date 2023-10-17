@@ -44,7 +44,7 @@ class InContextDecoder(nn.Module):
 
         output = self.detail_decoder(features, source_images)
 
-        return output
+        return output, features['mask'], features['trimap']
 
     def get_trainable_params(self):
         params = []

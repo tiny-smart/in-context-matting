@@ -109,7 +109,8 @@ class DetailCapture(nn.Module):
         img_chans=4,
         convstream_out = [48, 96, 192],
         fusion_out = [256, 128, 64, 32],
-        ckpt=None
+        ckpt=None,
+        use_sigmoid = True,
     ):
         super().__init__()
         assert len(fusion_out) == len(convstream_out) + 1
@@ -135,13 +136,15 @@ class DetailCapture(nn.Module):
         if ckpt != None and ckpt != '':
             self.load_state_dict(ckpt['state_dict'], strict=False)
             print('load detail capture ckpt from', ckpt['path'])
+        
+        self.use_sigmoid = use_sigmoid
 
     def forward(self, features, images):
         
         if isinstance(features, dict):
-            
-            features = features['feature']
             trimap = features['trimap']
+            features = features['feature']
+            
             images = torch.cat([images, trimap], dim=1)
         
         detail_features = self.convstream(images)
@@ -153,8 +156,10 @@ class DetailCapture(nn.Module):
             d_name_ = 'D'+str(len(self.fusion_blks)-i-1)
             features = self.fusion_blks[i](features, detail_features[d_name_])
         
-        phas = torch.sigmoid(self.matting_head(features))
-
+        if self.use_sigmoid:
+            phas = torch.sigmoid(self.matting_head(features))
+        else:
+            phas = self.matting_head(features)
         return phas
     
     def get_trainable_params(self):

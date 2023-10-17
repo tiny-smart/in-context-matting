@@ -9,6 +9,166 @@ from diffusers import DDIMScheduler
 import gc
 from PIL import Image
 
+from ptp.ptp_attention_controllers import AttentionStore
+import xformers
+
+
+def register_attention_control(model, controller, if_softmax=True):
+    def ca_forward(self, place_in_unet, att_opt_b):
+
+        class MyXFormersAttnProcessor:
+            r"""
+            Processor for implementing memory efficient attention using xFormers.
+
+            Args:
+                attention_op (`Callable`, *optional*, defaults to `None`):
+                    The base
+                    [operator](https://facebookresearch.github.io/xformers/components/ops.html#xformers.ops.AttentionOpBase) to
+                    use as the attention operator. It is recommended to set to `None`, and allow xFormers to choose the best
+                    operator.
+            """
+
+            def __init__(self, attention_op=None):
+                self.attention_op = attention_op
+
+            def __call__(
+                self,
+                attn,
+                hidden_states: torch.FloatTensor,
+                encoder_hidden_states=None,
+                attention_mask=None,
+                temb=None,
+            ):
+                residual = hidden_states
+
+                if attn.spatial_norm is not None:
+                    hidden_states = attn.spatial_norm(hidden_states, temb)
+
+                input_ndim = hidden_states.ndim
+
+                if input_ndim == 4:
+                    batch_size, channel, height, width = hidden_states.shape
+                    hidden_states = hidden_states.view(
+                        batch_size, channel, height * width).transpose(1, 2)
+
+                batch_size, key_tokens, _ = (
+                    hidden_states.shape if encoder_hidden_states is None else encoder_hidden_states.shape
+                )
+
+                attention_mask = attn.prepare_attention_mask(
+                    attention_mask, key_tokens, batch_size)
+                if attention_mask is not None:
+                    # expand our mask's singleton query_tokens dimension:
+                    #   [batch*heads,            1, key_tokens] ->
+                    #   [batch*heads, query_tokens, key_tokens]
+                    # so that it can be added as a bias onto the attention scores that xformers computes:
+                    #   [batch*heads, query_tokens, key_tokens]
+                    # we do this explicitly because xformers doesn't broadcast the singleton dimension for us.
+                    _, query_tokens, _ = hidden_states.shape
+                    attention_mask = attention_mask.expand(
+                        -1, query_tokens, -1)
+
+                if attn.group_norm is not None:
+                    hidden_states = attn.group_norm(
+                        hidden_states.transpose(1, 2)).transpose(1, 2)
+
+                query = attn.to_q(hidden_states)
+
+                is_cross = False if encoder_hidden_states is None else True
+
+                if encoder_hidden_states is None:
+                    encoder_hidden_states = hidden_states
+                elif attn.norm_cross:
+                    encoder_hidden_states = attn.norm_encoder_hidden_states(
+                        encoder_hidden_states)
+
+                key = attn.to_k(encoder_hidden_states)
+                value = attn.to_v(encoder_hidden_states)
+
+                query = attn.head_to_batch_dim(query).contiguous()
+                key = attn.head_to_batch_dim(key).contiguous()
+                value = attn.head_to_batch_dim(value).contiguous()
+
+                # controller
+                if query.shape[1] in controller.store_res:
+                    sim = torch.einsum('b i d, b j d -> b i j',
+                                    query, key) * attn.scale
+
+                    if if_softmax:
+                        sim = sim / if_softmax
+                        my_attn = sim.softmax(dim=-1)
+                        del sim
+                    else:
+                        my_attn = sim
+
+                    controller(my_attn, is_cross, place_in_unet)
+
+                # end controller
+
+                hidden_states = xformers.ops.memory_efficient_attention(
+                    query, key, value, attn_bias=attention_mask, op=self.attention_op, scale=attn.scale
+                )
+                hidden_states = hidden_states.to(query.dtype)
+                hidden_states = attn.batch_to_head_dim(hidden_states)
+
+                # linear proj
+                hidden_states = attn.to_out[0](hidden_states)
+                # dropout
+                hidden_states = attn.to_out[1](hidden_states)
+
+                if input_ndim == 4:
+                    hidden_states = hidden_states.transpose(
+                        -1, -2).reshape(batch_size, channel, height, width)
+
+                if attn.residual_connection:
+                    hidden_states = hidden_states + residual
+
+                hidden_states = hidden_states / attn.rescale_output_factor
+
+                return hidden_states
+
+        return MyXFormersAttnProcessor(att_opt_b)
+
+    class DummyController:
+
+        def __call__(self, *args):
+            return args[0]
+
+        def __init__(self):
+            self.num_att_layers = 0
+
+    if controller is None:
+        controller = DummyController()
+
+    def register_recr(net_, count, place_in_unet):
+        if net_.__class__.__name__ == 'Attention':
+            net_.processor = ca_forward(
+                net_, place_in_unet, net_.processor.attention_op)
+            return count + 1
+        elif hasattr(net_, 'children'):
+            for net__ in net_.children():
+                count = register_recr(net__, count, place_in_unet)
+        return count
+
+    cross_att_count = 0
+    # sub_nets = model.unet.named_children()
+    sub_nets = model.unet.named_children()
+    # for net in sub_nets:
+    #     if "down" in net[0]:
+    #         cross_att_count += register_recr(net[1], 0, "down")
+    #     elif "up" in net[0]:
+    #         cross_att_count += register_recr(net[1], 0, "up")
+    #     elif "mid" in net[0]:
+    #         cross_att_count += register_recr(net[1], 0, "mid")
+    for net in sub_nets:
+        if "down_blocks" in net[0]:
+            cross_att_count += register_recr(net[1], 0, "down")
+        elif "up_blocks" in net[0]:
+            cross_att_count += register_recr(net[1], 0, "up")
+        elif "mid_block" in net[0]:
+            cross_att_count += register_recr(net[1], 0, "mid")
+    controller.num_att_layers = cross_att_count
+
 
 class MyUNet2DConditionModel(UNet2DConditionModel):
     def forward(
@@ -65,7 +225,8 @@ class MyUNet2DConditionModel(UNet2DConditionModel):
                 dtype = torch.float32 if is_mps else torch.float64
             else:
                 dtype = torch.int32 if is_mps else torch.int64
-            timesteps = torch.tensor([timesteps], dtype=dtype, device=sample.device)
+            timesteps = torch.tensor(
+                [timesteps], dtype=dtype, device=sample.device)
         elif len(timesteps.shape) == 0:
             timesteps = timesteps[None].to(sample.device)
 
@@ -111,7 +272,8 @@ class MyUNet2DConditionModel(UNet2DConditionModel):
                     cross_attention_kwargs=cross_attention_kwargs,
                 )
             else:
-                sample, res_samples = downsample_block(hidden_states=sample, temb=emb)
+                sample, res_samples = downsample_block(
+                    hidden_states=sample, temb=emb)
 
             down_block_res_samples += res_samples
 
@@ -128,12 +290,12 @@ class MyUNet2DConditionModel(UNet2DConditionModel):
         # 5. up
         up_ft = {}
         for i, upsample_block in enumerate(self.up_blocks):
-            if i > np.max(up_ft_indices):
-                break
+            # if i > np.max(up_ft_indices):
+            #     break
 
             is_final_block = i == len(self.up_blocks) - 1
 
-            res_samples = down_block_res_samples[-len(upsample_block.resnets) :]
+            res_samples = down_block_res_samples[-len(upsample_block.resnets):]
             down_block_res_samples = down_block_res_samples[
                 : -len(upsample_block.resnets)
             ]
@@ -180,9 +342,11 @@ class OneStepSDPipeline(StableDiffusionPipeline):
         t,
         up_ft_indices,
         negative_prompt: Optional[Union[str, List[str]]] = None,
-        generator: Optional[Union[torch.Generator, List[torch.Generator]]] = None,
+        generator: Optional[Union[torch.Generator,
+                                  List[torch.Generator]]] = None,
         prompt_embeds: Optional[torch.FloatTensor] = None,
-        callback: Optional[Callable[[int, int, torch.FloatTensor], None]] = None,
+        callback: Optional[Callable[[
+            int, int, torch.FloatTensor], None]] = None,
         callback_steps: int = 1,
         cross_attention_kwargs: Optional[Dict[str, Any]] = None,
     ):
@@ -204,9 +368,11 @@ class OneStepSDPipeline(StableDiffusionPipeline):
         return unet_output
 
 
-class SDFeaturizer:
-    def __init__(self, sd_id='pretrained/stable-diffusion-2-1-base', load_local=True):
-                 #sd_id="stabilityai/stable-diffusion-2-1", load_local=False):
+class SDFeaturizer(nn.Module):
+    def __init__(self, sd_id='pretrained_models/stable-diffusion-2-1',
+                 load_local=True, ):
+        super().__init__()
+        # sd_id="stabilityai/stable-diffusion-2-1", load_local=False):
         unet = MyUNet2DConditionModel.from_pretrained(
             sd_id,
             subfolder="unet",
@@ -240,7 +406,7 @@ class SDFeaturizer:
         self.pipe = onestep_pipe
 
     @torch.no_grad()
-    def forward(self, img_tensor, prompt, t=261, up_ft_index=1, ensemble_size=8):
+    def forward(self, img_tensor, prompt='', t=261, up_ft_index=3, ensemble_size=8):
         """
         Args:
             img_tensor: should be a single torch tensor in the shape of [1, C, H, W] or [C, H, W]
@@ -251,7 +417,8 @@ class SDFeaturizer:
         Return:
             unet_ft: a torch tensor in the shape of [1, c, h, w]
         """
-        img_tensor = img_tensor.repeat(ensemble_size, 1, 1, 1).cuda()  # ensem, c, h, w
+        img_tensor = img_tensor.repeat(
+            ensemble_size, 1, 1, 1).cuda()  # ensem, c, h, w
         prompt_embeds = self.pipe._encode_prompt(
             prompt=prompt,
             device="cuda",
@@ -268,3 +435,135 @@ class SDFeaturizer:
         unet_ft = unet_ft_all["up_ft"][up_ft_index]  # ensem, c, h, w
         unet_ft = unet_ft.mean(0, keepdim=True)  # 1,c,h,w
         return unet_ft
+    # index 0: 1280, 24, 24
+    # index 1: 1280, 48, 48
+    # index 2: 640, 96, 96
+    # index 3: 320, 96，96
+    @torch.no_grad()
+    def forward_feature_extractor(self, uc, img_tensor, t=261, up_ft_index=[0, 1, 2, 3], ensemble_size=8):
+        """
+        Args:
+            img_tensor: should be a single torch tensor in the shape of [1, C, H, W] or [C, H, W]
+            prompt: the prompt to use, a string
+            t: the time step to use, should be an int in the range of [0, 1000]
+            up_ft_index: which upsampling block of the U-Net to extract feature, you can choose [0, 1, 2, 3]
+            ensemble_size: the number of repeated images used in the batch to extract features
+        Return:
+            unet_ft: a torch tensor in the shape of [1, c, h, w]
+        """
+        img_tensor = img_tensor.repeat(
+            ensemble_size, 1, 1, 1).cuda()  # ensem, c, h, w
+
+        prompt_embeds = uc.repeat(
+            ensemble_size, 1, 1).to(img_tensor.device)
+        unet_ft_all = self.pipe(
+            img_tensor=img_tensor,
+            t=t,
+            up_ft_indices=up_ft_index,
+            prompt_embeds=prompt_embeds,
+        )
+        unet_ft = unet_ft_all["up_ft"]  # ensem, c, h, w
+
+        return unet_ft
+
+
+class FeatureExtractor(nn.Module):
+    def __init__(self,
+                 sd_id='pretrained_models/stable-diffusion-2-1',
+                 load_local=True,
+                 if_softmax=False,
+                 feature_index_cor=1,
+                 feature_index_matting=4,
+                 attention_res=32,  # [16, 32],
+                 set_diag_to_one=True,
+                 time_steps=[0],
+                 extract_feature_inputted_to_layer=False,
+                 ensemble_size=8):
+        super().__init__()
+        self.dift_sd = SDFeaturizer(sd_id=sd_id, load_local=load_local)
+        # register buffer for prompt embedding
+        self.register_buffer("prompt_embeds", self.dift_sd.pipe._encode_prompt(
+            prompt='',
+            num_images_per_prompt=1,
+            do_classifier_free_guidance=False,
+            device="cuda",
+        ))
+        # free self.pipe.tokenizer and self.pipe.text_encoder
+        del self.dift_sd.pipe.tokenizer
+        del self.dift_sd.pipe.text_encoder
+        gc.collect()
+        torch.cuda.empty_cache()
+
+        self.register_attention_store(
+            if_softmax=if_softmax, attention_res=attention_res)
+        self.feature_index_cor = feature_index_cor
+        self.feature_index_matting = feature_index_matting
+        self.attention_res = attention_res
+        self.set_diag_to_one = set_diag_to_one
+        self.time_steps = time_steps
+        self.extract_feature_inputted_to_layer = extract_feature_inputted_to_layer
+        self.ensemble_size = ensemble_size
+
+    def register_attention_store(self, if_softmax=False, attention_res=[16, 32]):
+        self.controller = AttentionStore(store_res=attention_res)
+
+        register_attention_control(
+            self.dift_sd.pipe, self.controller, if_softmax=if_softmax)
+
+    def get_trainable_params(self):
+        return []
+
+    def get_reference_feature(self, images):
+        features = self.dift_sd.forward_feature_extractor(
+            self.prompt_embeds, images, t=self.time_steps[0], ensemble_size=self.ensemble_size)
+
+        return features[self.feature_index_cor].mean(0, keepdim=True).detach()
+
+    def get_source_feature(self, images):
+        # return {"ft": [B, C, H, W], "attn": [B, H, W, H*W]}
+
+        self.controller.reset()
+        torch.cuda.empty_cache()
+        batch_size = images.shape[0]
+
+        ft = self.dift_sd.forward_feature_extractor(
+            self.prompt_embeds, images, t=self.time_steps[0], ensemble_size=self.ensemble_size)
+
+        attention_maps = self.get_feature_attention(batch_size)
+
+        output = {"ft_cor": ft[self.feature_index_cor].mean(0, keepdim=True).detach(),
+                  "attn": attention_maps, 'ft_matting': ft[self.feature_index_matting].mean(0, keepdim=True).detach()}
+        return output
+
+    def get_feature_attention(self, batch_size):
+
+        attention_maps = self.__aggregate_attention(
+            from_where=["down", "mid", "up"], is_cross=False, batch_size=batch_size)
+
+        attention_maps = attention_maps.permute(0, 2, 1).reshape(
+            (batch_size, -1, self.attention_res, self.attention_res))  # [bs, h*w, h, w]
+        attention_maps = attention_maps.permute(0, 2, 3, 1)  # [bs, h, w, h*w]
+        return attention_maps
+
+    def __aggregate_attention(self, from_where: List[str], is_cross: bool, batch_size: int):
+        out = []
+        self.controller.between_steps()
+        self.controller.cur_step=1
+        attention_maps = self.controller.get_average_attention()
+        res = self.attention_res
+        num_pixels = res ** 2
+        for location in from_where:
+            for item in attention_maps[f"{location}_{'cross' if is_cross else 'self'}"]:
+                if item.shape[1] == num_pixels:
+                    cross_maps = item.reshape(
+                        batch_size, -1, res, res, item.shape[-1])
+                    out.append(cross_maps)
+        out = torch.cat(out, dim=1)
+        out = out.sum(1) / out.shape[1]
+        out = out.reshape(batch_size, out.shape[-1], out.shape[-1])
+
+        if self.set_diag_to_one:
+            for o in out:
+                o = o - torch.diag(torch.diag(o)) + \
+                    torch.eye(o.shape[0]).to(o.device)
+        return out

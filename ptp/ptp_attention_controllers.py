@@ -63,9 +63,16 @@ class AttentionStore(AttentionControl):
 
     def forward(self, attn, is_cross: bool, place_in_unet: str):
         key = f"{place_in_unet}_{'cross' if is_cross else 'self'}"
-        if attn.shape[1] <= 32 ** 2:  # avoid memory overhead
-            self.step_store[key].append(attn)
-        return attn
+        if self.store_res is not None:
+            if attn.shape[1] in self.store_res and (is_cross is False):
+                attn_ = attn.mean(dim=0).unsqueeze(0)
+                self.step_store[key].append(attn_)
+        elif attn.shape[1] <= 48 ** 2 and (is_cross is False):  # avoid memory overhead
+            attn_ = attn.mean(dim=0).unsqueeze(0)
+            self.step_store[key].append(attn_)
+
+        del attn
+        torch.cuda.empty_cache()
 
     def between_steps(self):
         if len(self.attention_store) == 0:
@@ -83,6 +90,8 @@ class AttentionStore(AttentionControl):
 
     def reset(self):
         super(AttentionStore, self).reset()
+        del self.step_store
+        torch.cuda.empty_cache()
         self.step_store = self.get_empty_store()
         self.attention_store = {}
 
@@ -90,5 +99,8 @@ class AttentionStore(AttentionControl):
         super(AttentionStore, self).__init__()
         self.step_store = self.get_empty_store()
         self.attention_store = {}
-        self.store_res = store_res
+        store_res = store_res if isinstance(store_res, List) else [store_res]
+        self.store_res = []
+        for res in store_res:
+            self.store_res.append(res**2)
         
