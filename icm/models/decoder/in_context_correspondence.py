@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 
+from icm.models.decoder.bottleneck_block import BottleneckBlock
 
 def compute_correspondence_matrix(source_feature, ref_feature):
     """
@@ -555,3 +556,23 @@ class SemiTrainingAttentionBlocks(nn.Module):
         # out = F.interpolate(out, size=(H, W), mode='bilinear', align_corners=True)
 
         return out
+
+
+class MultiScaleFeatureFusion(nn.Module):
+    '''
+    N conv layers or bottleneck blocks to compress the feature dimension
+    
+    M conv layers and upsampling to fusion the features
+    
+    '''
+    def __init__(self,
+                 in_feature_dim=[],
+                 in_attn_res=[],
+                 use_bottleneck=False) -> None:
+        super().__init__()
+
+    def forward(self, features, attn_maps):
+        # features: {'32': tensor, '16': tensor, '8': tensor}
+        # attn_maps: {'32': tensor, '16': tensor, '8': tensor}
+        pass
+    

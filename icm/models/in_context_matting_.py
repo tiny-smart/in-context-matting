@@ -88,7 +88,8 @@ class InContextMatting(pl.LightningModule):
         loss_dict = self.loss_function(sample_map, outputs, labels)
 
         loss = sum(loss_dict.values())
-
+        if loss > 1e4 or torch.isnan(loss):
+            raise ValueError(f"Loss explosion: {loss}")
         return loss_dict, loss, outputs, cross_map, self_map
 
     def __log_loss(self, loss_dict, loss, prefix):

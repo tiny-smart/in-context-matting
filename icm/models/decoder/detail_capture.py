@@ -52,6 +52,7 @@ class ConvStream(nn.Module):
         out_dict = {'D0': x}
         for i in range(len(self.convs)):
             x = self.convs[i](x)
+            check = self.convs[i]
             name_ = 'D'+str(i+1)
             out_dict[name_] = x
         
