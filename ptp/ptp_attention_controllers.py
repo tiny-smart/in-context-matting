@@ -24,14 +24,14 @@ class AttentionControl(abc.ABC):
     def forward (self, attn, is_cross: bool, place_in_unet: str):
         raise NotImplementedError
 
-    def __call__(self, attn, is_cross: bool, place_in_unet: str):
+    def __call__(self, attn, is_cross: bool, place_in_unet: str, ensemble_size=1, token_batch_size=1):
         if self.cur_att_layer >= self.num_uncond_att_layers:
             if LOW_RESOURCE:
-                attn = self.forward(attn, is_cross, place_in_unet)
+                attn = self.forward(attn, is_cross, place_in_unet, ensemble_size, token_batch_size)
             else:
                 h = attn.shape[0]
                 # attn[h // 2:] = self.forward(attn[h // 2:], is_cross, place_in_unet)
-                attn = self.forward(attn, is_cross, place_in_unet)
+                attn = self.forward(attn, is_cross, place_in_unet, ensemble_size, token_batch_size)
         self.cur_att_layer += 1
         if self.cur_att_layer == self.num_att_layers + self.num_uncond_att_layers:
             self.cur_att_layer = 0
@@ -61,17 +61,23 @@ class AttentionStore(AttentionControl):
         return {"down_cross": [], "mid_cross": [], "up_cross": [],
                 "down_self": [],  "mid_self": [],  "up_self": []}
 
-    def forward(self, attn, is_cross: bool, place_in_unet: str):
+    def forward(self, attn, is_cross: bool, place_in_unet: str, ensemble_size=1, token_batch_size=1):
+        num_head = attn.shape[0]//token_batch_size
         key = f"{place_in_unet}_{'cross' if is_cross else 'self'}"
         if self.store_res is not None:
             if attn.shape[1] in self.store_res and (is_cross is False):
-                attn_ = attn.mean(dim=0).unsqueeze(0)
-                self.step_store[key].append(attn_)
+                attn = attn.reshape(-1, ensemble_size, *attn.shape[1:])
+                attn = attn.mean(dim=1)
+                attn = attn.reshape(-1,num_head , *attn.shape[1:])
+                attn = attn.mean(dim=1)
+                self.step_store[key].append(attn)
         elif attn.shape[1] <= 48 ** 2 and (is_cross is False):  # avoid memory overhead
-            attn_ = attn.mean(dim=0).unsqueeze(0)
-            self.step_store[key].append(attn_)
+            attn = attn.reshape(-1, ensemble_size, *attn.shape[1:])
+            attn = attn.mean(dim=1)
+            attn = attn.reshape(-1,num_head , *attn.shape[1:])
+            attn = attn.mean(dim=1)
+            self.step_store[key].append(attn)
 
-        del attn
         torch.cuda.empty_cache()
 
     def between_steps(self):

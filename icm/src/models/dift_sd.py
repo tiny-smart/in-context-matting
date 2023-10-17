@@ -13,7 +13,7 @@ from ptp.ptp_attention_controllers import AttentionStore
 import xformers
 
 
-def register_attention_control(model, controller, if_softmax=True):
+def register_attention_control(model, controller, if_softmax=True, ensemble_size=1):
     def ca_forward(self, place_in_unet, att_opt_b):
 
         class MyXFormersAttnProcessor:
@@ -96,12 +96,12 @@ def register_attention_control(model, controller, if_softmax=True):
 
                     if if_softmax:
                         sim = sim / if_softmax
-                        my_attn = sim.softmax(dim=-1)
+                        my_attn = sim.softmax(dim=-1).detach()
                         del sim
                     else:
-                        my_attn = sim
+                        my_attn = sim.detach()
 
-                    controller(my_attn, is_cross, place_in_unet)
+                    controller(my_attn, is_cross, place_in_unet, ensemble_size, batch_size)
 
                 # end controller
 
@@ -404,6 +404,16 @@ class SDFeaturizer(nn.Module):
         onestep_pipe.enable_attention_slicing()
         onestep_pipe.enable_xformers_memory_efficient_attention()
         self.pipe = onestep_pipe
+        
+        # register nn.module for ddp
+        self.vae = self.pipe.vae
+        self.unet = self.pipe.unet
+        
+        # freeze vae and unet
+        for param in self.vae.parameters():
+            param.requires_grad = False
+        for param in self.unet.parameters():
+            param.requires_grad = False
 
     @torch.no_grad()
     def forward(self, img_tensor, prompt='', t=261, up_ft_index=3, ensemble_size=8):
@@ -451,11 +461,14 @@ class SDFeaturizer(nn.Module):
         Return:
             unet_ft: a torch tensor in the shape of [1, c, h, w]
         """
-        img_tensor = img_tensor.repeat(
-            ensemble_size, 1, 1, 1).cuda()  # ensem, c, h, w
-
+        batch_size = img_tensor.shape[0]
+        
+        img_tensor = img_tensor.unsqueeze(1).repeat(1, ensemble_size, 1, 1, 1)
+        
+        img_tensor = img_tensor.reshape(-1, *img_tensor.shape[2:])
+        
         prompt_embeds = uc.repeat(
-            ensemble_size, 1, 1).to(img_tensor.device)
+            img_tensor.shape[0], 1, 1).to(img_tensor.device)
         unet_ft_all = self.pipe(
             img_tensor=img_tensor,
             t=t,
@@ -480,6 +493,7 @@ class FeatureExtractor(nn.Module):
                  extract_feature_inputted_to_layer=False,
                  ensemble_size=8):
         super().__init__()
+        
         self.dift_sd = SDFeaturizer(sd_id=sd_id, load_local=load_local)
         # register buffer for prompt embedding
         self.register_buffer("prompt_embeds", self.dift_sd.pipe._encode_prompt(
@@ -493,31 +507,41 @@ class FeatureExtractor(nn.Module):
         del self.dift_sd.pipe.text_encoder
         gc.collect()
         torch.cuda.empty_cache()
-
-        self.register_attention_store(
-            if_softmax=if_softmax, attention_res=attention_res)
         self.feature_index_cor = feature_index_cor
         self.feature_index_matting = feature_index_matting
         self.attention_res = attention_res
         self.set_diag_to_one = set_diag_to_one
         self.time_steps = time_steps
         self.extract_feature_inputted_to_layer = extract_feature_inputted_to_layer
-        self.ensemble_size = ensemble_size
+        self.ensemble_size = ensemble_size        
+        self.register_attention_store(
+            if_softmax=if_softmax, attention_res=attention_res)
+
 
     def register_attention_store(self, if_softmax=False, attention_res=[16, 32]):
         self.controller = AttentionStore(store_res=attention_res)
 
         register_attention_control(
-            self.dift_sd.pipe, self.controller, if_softmax=if_softmax)
+            self.dift_sd.pipe, self.controller, if_softmax=if_softmax, ensemble_size=self.ensemble_size)
 
     def get_trainable_params(self):
         return []
 
     def get_reference_feature(self, images):
+        batch_size = images.shape[0]
         features = self.dift_sd.forward_feature_extractor(
-            self.prompt_embeds, images, t=self.time_steps[0], ensemble_size=self.ensemble_size)
+            self.prompt_embeds, images, t=self.time_steps[0], ensemble_size=self.ensemble_size) # b*e, c, h, w
 
-        return features[self.feature_index_cor].mean(0, keepdim=True).detach()
+        features = self.ensemble_feature(
+            features, self.feature_index_cor, batch_size)
+        
+        return features.detach()
+
+    def ensemble_feature(self, features, index, batch_size):
+        features = features[index].reshape(
+            batch_size, self.ensemble_size, *features[index].shape[1:])
+        features = features.mean(1, keepdim=False).detach()
+        return features
 
     def get_source_feature(self, images):
         # return {"ft": [B, C, H, W], "attn": [B, H, W, H*W]}
@@ -525,14 +549,15 @@ class FeatureExtractor(nn.Module):
         self.controller.reset()
         torch.cuda.empty_cache()
         batch_size = images.shape[0]
-
+        
         ft = self.dift_sd.forward_feature_extractor(
-            self.prompt_embeds, images, t=self.time_steps[0], ensemble_size=self.ensemble_size)
+            self.prompt_embeds, images, t=self.time_steps[0], ensemble_size=self.ensemble_size) # b*e, c, h, w
+
 
         attention_maps = self.get_feature_attention(batch_size)
 
-        output = {"ft_cor": ft[self.feature_index_cor].mean(0, keepdim=True).detach(),
-                  "attn": attention_maps, 'ft_matting': ft[self.feature_index_matting].mean(0, keepdim=True).detach()}
+        output = {"ft_cor": self.ensemble_feature(ft, self.feature_index_cor, batch_size).detach(),
+                  "attn": attention_maps, 'ft_matting': self.ensemble_feature(ft, self.feature_index_matting, batch_size).detach()}
         return output
 
     def get_feature_attention(self, batch_size):

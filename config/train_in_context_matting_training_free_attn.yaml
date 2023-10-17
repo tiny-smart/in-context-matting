@@ -37,7 +37,7 @@ model:
         set_diag_to_one: True
         time_steps: [0]
         extract_feature_inputted_to_layer: False
-        ensemble_size: 8
+        ensemble_size: 4
 
     cfg_in_context_decoder:
       target: icm.models.decoder.in_context_decoder.InContextDecoder
@@ -65,7 +65,7 @@ model:
 data:
   target: icm.data.data_module.DataModuleFromConfig
   params:
-    batch_size: 1
+    batch_size: 2
     num_workers: 8
     shuffle_train: False
     train:
@@ -77,7 +77,7 @@ data:
         data:
           target: icm.data.image_file.ContextData
           params:
-            ratio: 0.9
+            ratio: 0.3
             dataset_name: [ # "AIM-ICM", 
                 "open-images-test",
                 # "open-images-validation",
@@ -103,7 +103,7 @@ data:
 trainer:
   check_val_every_n_step: 1500
   accelerator: "ddp"
-  gpus: 1
+  gpus: 2
   max_epochs: 1000
   auto_select_gpus: False
   num_sanity_val_steps: 0
