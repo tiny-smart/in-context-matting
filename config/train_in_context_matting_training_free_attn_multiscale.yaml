@@ -7,11 +7,11 @@ model:
       target: icm.models.criterion.loss_function.LossFunction
       params:
         losses: [
-            "unknown_l1_loss",
-            "known_l1_loss",
+            # "unknown_l1_loss",
+            # "known_l1_loss",
             # "loss_pha_laplacian",
             # "loss_gradient_penalty",
-            # "smooth_l1_loss",
+            "smooth_l1_loss",
             # "cross_entropy_loss",
             # "focal_loss",
           ]
@@ -34,7 +34,7 @@ model:
         feature_index_cor: 1
         feature_index_matting: [0, 1]
         attention_res: [24, 48] # [24, 48]
-        set_diag_to_one: True
+        set_diag_to_one: False
         time_steps: [0]
         extract_feature_inputted_to_layer: False
         ensemble_size: 4
@@ -59,7 +59,7 @@ model:
             pool_type: "min"
             upsample_mode: "bicubic"
             bottle_neck_dim: null
-            use_norm: False
+            use_norm: 1280
             in_ft_dim: [1280, 1280]
             in_attn_dim: [576, 2304]
             attn_out_dim: 256
@@ -80,7 +80,7 @@ data:
         data:
           target: icm.data.image_file.ContextData
           params:
-            ratio: 1
+            ratio: 0.8
             dataset_name: [
                 # "AIM-ICM",
                 "open-images-test",
@@ -96,18 +96,17 @@ data:
         data:
           target: icm.data.image_file.ContextData
           params:
-            ratio: 0
+            ratio: 0.8
             dataset_name: [
-                "ICM57",
-                # "open-images-test",
+                # "ICM57",
+                "open-images-test",
                 # "open-images-validation",
                 # "open-images-train_0",
               ]
 
 trainer:
-  check_val_every_n_step: 2000
   accelerator: "ddp"
-  gpus: 2
+  gpus: 4
   max_epochs: 1000
   auto_select_gpus: False
   num_sanity_val_steps: 0

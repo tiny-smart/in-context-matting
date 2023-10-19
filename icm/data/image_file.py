@@ -335,9 +335,16 @@ class ContextData():
                 # filter out the items if each element in "instance_area_ratio" list >0.1
                 # check if "instance_area_ratio" exists
                 if 'instance_area_ratio' in new_data[list(new_data.keys())[0]].keys():
-                    new_data = {k: v for k, v in new_data.items(
-                    ) if all([i > 0.1 for i in v['instance_area_ratio']])}
-                # concat new_data to dataset
+                    new_data_ = {}
+                    for k, v in new_data.items():
+                        if min(v['instance_area_ratio']) < 0.3:
+                            x = min(v['instance_area_ratio'])
+                            r = np.random.rand()
+                            if 100*(0.6-x)*x/9 > r**0.2:
+                                new_data_[k] = v
+                        else:
+                            new_data_[k] = v
+                    new_data = new_data_
                 dataset.update(new_data)
 
         # shuffle dataset with seed
