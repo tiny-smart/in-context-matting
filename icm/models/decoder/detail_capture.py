@@ -11,7 +11,7 @@ class Basic_Conv3x3(nn.Module):
         self,
         in_chans,
         out_chans,
-        stride=2,
+        stride=1,
         padding=1,
     ):
         super().__init__()
@@ -26,6 +26,31 @@ class Basic_Conv3x3(nn.Module):
 
         return x
 
+
+class Basic_Conv3x3_attn(nn.Module):
+    """
+    Basic convolution layers including: Conv3x3, BatchNorm2d, ReLU layers.
+    """
+    def __init__(
+        self,
+        in_chans,
+        out_chans,
+        stride=1,
+        padding=1,
+    ):
+        super().__init__()
+        self.conv = nn.Conv2d(in_chans, out_chans, 3, stride, padding, bias=False)
+        self.ln = nn.LayerNorm(in_chans, elementwise_affine=True)
+        self.relu = nn.ReLU(True)
+
+    def forward(self, x):
+        x = self.ln(x)
+        x = x.permute(0, 3, 1, 2)
+        x = self.relu(x)
+        x = self.conv(x)
+
+        return x
+    
 class ConvStream(nn.Module):
     """
     Simple ConvStream containing a series of basic conv3x3 layers to extract detail features.
@@ -45,7 +70,7 @@ class ConvStream(nn.Module):
             in_chan_ = self.conv_chans[i]
             out_chan_ = self.conv_chans[i+1]
             self.convs.append(
-                Basic_Conv3x3(in_chan_, out_chan_)
+                Basic_Conv3x3(in_chan_, out_chan_, stride=2)
             )
     
     def forward(self, x):
@@ -139,14 +164,15 @@ class DetailCapture(nn.Module):
             print('load detail capture ckpt from', ckpt['path'])
         
         self.use_sigmoid = use_sigmoid
-
+        self.img_chans = img_chans
     def forward(self, features, images):
         
         if isinstance(features, dict):
+            
             trimap = features['trimap']
             features = features['feature']
-            
-            images = torch.cat([images, trimap], dim=1)
+            if self.img_chans ==4:
+                images = torch.cat([images, trimap], dim=1)
         
         detail_features = self.convstream(images)
         # D0  2  4  512 512

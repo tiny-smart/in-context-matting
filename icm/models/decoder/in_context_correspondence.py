@@ -6,6 +6,8 @@ from torch.nn import functional as F
 
 from icm.models.decoder.bottleneck_block import BottleneckBlock
 
+from icm.models.decoder.detail_capture import Basic_Conv3x3, Basic_Conv3x3_attn, Fusion_Block
+
 def compute_correspondence_matrix(source_feature, ref_feature):
     """
     Compute correspondence matrix between source and reference features.
@@ -201,6 +203,7 @@ class TrainingFreeAttention(nn.Module):
             self.norm = nn.LayerNorm(use_norm, elementwise_affine=True)
         else:
             self.idt = nn.Identity()
+
     def forward(self, features, features_ref, roi_mask,):
         # roi_mask: [B, 1, H, W]
         # features: [B, C, h, w]
@@ -210,9 +213,9 @@ class TrainingFreeAttention(nn.Module):
             H_attn, W_attn = features.shape[2], features.shape[3]
         else:
             H_attn = H//self.res_ratio
-            W_attn = W//self.res_ratio 
-        features, features_ref = self.resize_input_to_res(
-            features, features_ref, (H, W))  # [H//res_ratio, W//res_ratio]
+            W_attn = W//self.res_ratio
+            features, features_ref = self.resize_input_to_res(
+                features, features_ref, (H, W))  # [H//res_ratio, W//res_ratio]
 
         # List, len = B, each element: [C_q, dim], dim = H//res_ratio * W//res_ratio
         features_ref = self.get_roi_features(features_ref, roi_mask)
@@ -268,17 +271,17 @@ class TrainingFreeAttention(nn.Module):
         mask: [1, H, W]  [0,1]
         return: [token_num, C]
         '''
-
+        kernel_size = mask.shape[1] // feature.shape[1] if self.res_ratio == None else self.res_ratio
         if self.pool_type == 'max':
-            mask = F.max_pool2d(mask, kernel_size=self.res_ratio,
-                                stride=self.res_ratio, padding=0)
+            mask = F.max_pool2d(mask, kernel_size=kernel_size,
+                                stride=kernel_size, padding=0)
         elif self.pool_type == 'average':
-            mask = F.avg_pool2d(mask, kernel_size=self.res_ratio,
-                                stride=self.res_ratio, padding=0)
+            mask = F.avg_pool2d(mask, kernel_size=kernel_size,
+                                stride=kernel_size, padding=0)
         elif self.pool_type == 'min':
             mask = -1*mask
-            mask = F.max_pool2d(mask, kernel_size=self.res_ratio,
-                                stride=self.res_ratio, padding=0)
+            mask = F.max_pool2d(mask, kernel_size=kernel_size,
+                                stride=kernel_size, padding=0)
             mask = -1*mask
         else:
             raise NotImplementedError
@@ -315,7 +318,8 @@ class TrainingFreeAttention(nn.Module):
         '''
         scale = feature.shape[-1]**-0.5 if self.use_scale else 1.0
         feature = self.norm(feature) if hasattr(self, 'norm') else feature
-        feature_ref = self.norm(feature_ref) if hasattr(self, 'norm') else feature_ref
+        feature_ref = self.norm(feature_ref) if hasattr(
+            self, 'norm') else feature_ref
         sim = einsum('i d, j d -> i j', feature_ref, feature)*scale
         sim = sim/self.temp_softmax
         sim = sim.softmax(dim=-1)
@@ -352,7 +356,7 @@ class TrainingFreeAttentionBlocks(nn.Module):
                  use_scale=False,
                  upsample_mode='bicubic',
                  bottle_neck_dim=None,
-                 use_norm = False,
+                 use_norm=False,
 
                  ):
         super().__init__()
@@ -362,15 +366,15 @@ class TrainingFreeAttentionBlocks(nn.Module):
                                                  temp_softmax=temp_softmax,
                                                  use_scale=use_scale,
                                                  upsample_mode=upsample_mode,
-                                                 use_norm = use_norm,)
+                                                 use_norm=use_norm,)
 
     def forward(self, feature_of_reference_image, ft_attn_of_source_image, guidance_on_reference_image):
         '''
         feature_of_reference_image: [B, C, H, W]
-        ft_attn_of_source_image: {"ft_cor": [B, C, H, W], "attn": [B, H_1, W_1, H_1*W_1], "ft_matting": [B, C, H, W]}
+        ft_attn_of_source_image: {"ft_cor": [B, C, H, W], "attn": {'24':[B, H_1, W_1, H_1*W_1],} "ft_matting": [B, C, H, W]}
         guidance_on_reference_image: [B, 1, H_2, W_2]
         '''
-        # assert feature_of_reference_image.shape[0] == 1 
+        # assert feature_of_reference_image.shape[0] == 1
         # get source_image h,w
         h, w = guidance_on_reference_image.shape[-2:]
 
@@ -382,9 +386,9 @@ class TrainingFreeAttentionBlocks(nn.Module):
         guidance_on_reference_image[guidance_on_reference_image <= 0.5] = 0
         attn_output = self.attn_module(
             features_cor, features_ref, guidance_on_reference_image)
-        
-        
-        attn_output = [attn_output_.sum(dim=0).unsqueeze(0).unsqueeze(0) for attn_output_ in attn_output]
+
+        attn_output = [attn_output_.sum(dim=0).unsqueeze(
+            0).unsqueeze(0) for attn_output_ in attn_output]
         attn_output = torch.cat(attn_output, dim=0)
 
         self_attn_output = self.training_free_self_attention(
@@ -407,7 +411,7 @@ class TrainingFreeAttentionBlocks(nn.Module):
 
         Parameters:
         x (torch.Tensor): The input tensor. Shape: [B, 1, H, W]
-        self_attn_maps (torch.Tensor): The attention maps. Shape: [B, H1, W1, H1*W1]
+        self_attn_maps (torch.Tensor): The attention maps. Shape: {'24': [B, H1, W1, H1*W1]}
 
         Returns:
         torch.Tensor: The result of the self-attention computation.
@@ -418,6 +422,9 @@ class TrainingFreeAttentionBlocks(nn.Module):
         B, _, H, W = x.shape
 
         # Dimensions of the attention maps
+        assert len(self_attn_maps) == 1
+        # get only one value in dict
+        self_attn_maps = list(self_attn_maps.values())[0]
         _, H1, W1, _ = self_attn_maps.shape
 
         # Resize x to match the spatial dimensions of the attention maps
@@ -457,32 +464,44 @@ class SemiTrainingAttentionBlocks(nn.Module):
     def __init__(self,
                  res_ratio=8,
                  pool_type='min',
-                 temp_softmax=1000,
-                 use_scale=False,
                  upsample_mode='bicubic',
                  bottle_neck_dim=None,
-                 use_norm = False,
-                 in_dim = [1280,960],
-
+                 use_norm=False,
+                 in_ft_dim=[1280, 960],
+                 in_attn_dim=[24**2, 48**2],
+                 attn_out_dim = 256,
+                 ft_out_dim = 512,
                  ):
         super().__init__()
 
         self.attn_module = TrainingFreeAttention(res_ratio=res_ratio,
                                                  pool_type=pool_type,
-                                                 temp_softmax=temp_softmax,
-                                                 use_scale=use_scale,
+                                                 temp_softmax=1,
+                                                 use_scale=True,
                                                  upsample_mode=upsample_mode,
-                                                 use_norm = use_norm,)
+                                                 use_norm=use_norm,)
         
+        # init module list for attn, with basic 3*3 conv_attn
+        self.attn_module_list = nn.ModuleList()
+        self.ft_attn_module_list = nn.ModuleList()
+        for i in range(len(in_attn_dim)):
+            self.attn_module_list.append(Basic_Conv3x3_attn(in_attn_dim[i], attn_out_dim))
+            self.ft_attn_module_list.append(Basic_Conv3x3(ft_out_dim[i] + attn_out_dim, ft_out_dim[i]))
+        # init module list for ft, with basic 3*3 conv
+        self.ft_module_list = nn.ModuleList()
+        for i in range(len(in_ft_dim)):
+            self.ft_module_list.append(Basic_Conv3x3(in_ft_dim[i], ft_out_dim[i]))
         
+        ft_out_dim_ = [2*d for d in ft_out_dim]
+        self.fusion = MultiScaleFeatureFusion(ft_out_dim_, ft_out_dim)
 
     def forward(self, feature_of_reference_image, ft_attn_of_source_image, guidance_on_reference_image):
         '''
         feature_of_reference_image: [B, C, H, W]
-        ft_attn_of_source_image: {"ft_cor": [B, C, H, W], "attn": [B, H_1, W_1, H_1*W_1], "ft_matting": [B, C, H, W]}
+        ft_attn_of_source_image: {"ft_cor": [B, C, H, W], "attn": [B, H_1, W_1, H_1*W_1], "ft_matting": {'24':[B, C, H, W]} }
         guidance_on_reference_image: [B, 1, H_2, W_2]
         '''
-        assert feature_of_reference_image.shape[0] == 1 
+        # assert feature_of_reference_image.shape[0] == 1
         # get source_image h,w
         h, w = guidance_on_reference_image.shape[-2:]
 
@@ -494,66 +513,86 @@ class SemiTrainingAttentionBlocks(nn.Module):
         guidance_on_reference_image[guidance_on_reference_image <= 0.5] = 0
         attn_output = self.attn_module(
             features_cor, features_ref, guidance_on_reference_image)
-        
-        
-        attn_output = attn_output[0].sum(dim=0).unsqueeze(0).unsqueeze(0)
+
+        attn_output = [attn_output_.sum(dim=0).unsqueeze(
+            0).unsqueeze(0) for attn_output_ in attn_output]
+        attn_output = torch.cat(attn_output, dim=0)
 
         self_attn_output = self.training_free_self_attention(
             attn_output, ft_attn_of_source_image['attn'])
 
-        # resize
-        self_attn_output = F.interpolate(
-            self_attn_output, size=(h, w), mode='bilinear')
+        # concat attn and ft_matting
+
+        attn_ft_matting = {}
+        for i, key in enumerate(features_matting.keys()):
+            if key in self_attn_output.keys():
+                features_matting[key] = self.ft_module_list[i](features_matting[key])
+                attn_ft_matting[key] = torch.cat(
+                    [features_matting[key], self_attn_output[key]], dim=1)
+                
+                attn_ft_matting[key] = self.ft_attn_module_list[i](attn_ft_matting[key])
+                
+            else:
+                attn_ft_matting[key] = self.ft_module_list[i](features_matting[key])
+
+        # forward in multi-scale fusion block
+        attn_ft_matting = self.fusion(attn_ft_matting)
+        
+        att_look = []
+        # resize and average self_attn_output
+        for i, key in enumerate(self_attn_output.keys()):
+            att__ = F.interpolate(
+                self_attn_output[key].mean(dim=1).unsqueeze(1), size=(h, w), mode='bilinear')
+            att_look.append(att__)
+        att_look = torch.cat(att_look, dim=1)
+        att_look = att_look.mean(dim=1).unsqueeze(1)
 
         output = {}
-        output['trimap'] = self_attn_output
-        output['feature'] = features_matting
+
+        output['trimap'] = att_look
+        output['feature'] = attn_ft_matting
         output['mask'] = attn_output
 
         return output
 
     def training_free_self_attention(self, x, self_attn_maps):
         '''
-        Compute self-attention using the attention maps.
+        Compute weighted attn maps using the attention maps.
 
         Parameters:
         x (torch.Tensor): The input tensor. Shape: [B, 1, H, W]
-        self_attn_maps (torch.Tensor): The attention maps. Shape: [B, H1, W1, H1*W1]
+        self_attn_maps (torch.Tensor): The attention maps. Shape: {'24':[B, H1, W1, H1*W1], '48':[B, H2, W2, H2*W2]}
 
         Returns:
-        torch.Tensor: The result of the self-attention computation.
+        torch.Tensor: The result of the attention computation. {'24':[B, 1, H1*W1, H1, W1], '48':[B, 1, H2*W2, H2, W2]}
         '''
 
         # Original dimensions of x
         # Assuming x's shape is [B, 1, H, W] based on your comment
         B, _, H, W = x.shape
-
-        # Dimensions of the attention maps
-        _, H1, W1, _ = self_attn_maps.shape
+        out = {}
+        for i, key in enumerate(self_attn_maps.keys()):
+            # Dimensions of the attention maps
+            _, H1, W1, _ = self_attn_maps[key].shape
 
         # Resize x to match the spatial dimensions of the attention maps
         # You might need align_corners depending on your version of PyTorch
-        x = F.interpolate(x, size=(H1, W1), mode='bilinear',
-                          align_corners=True)
+            x_ = F.interpolate(x, size=(H1, W1), mode='bilinear',
+                               align_corners=True)
 
         # Reshape the attention maps and x for matrix multiplication
         # Reshaping from [B, H1, W1, H1*W1] to [B, H1*W1, H1*W1]
-        self_attn_maps = self_attn_maps.view(B, H1 * W1, H1 * W1)
-        # Reshaping from [B, 1, H1, W1] to [B, 1, H1*W1]
-        x = x.view(B, 1, H1 * W1)
+            self_attn_map_ = self_attn_maps[key].view(
+                B, H1 * W1, H1 * W1).transpose(1, 2)
+            # Reshaping from [B, 1, H1, W1] to [B, 1, H1*W1]
+            x_ = x_.reshape(B, H1 * W1, 1)
 
-        # Apply the self-attention mechanism
-        # Matrix multiplication between the attention maps and the input feature map
-        # This step essentially computes the weighted sum of feature vectors in the input,
-        # where the weights are defined by the attention maps.
-        # Multiplying with the transpose to get shape [B, 1, H1*W1]
-        out = torch.matmul(x, self_attn_maps.transpose(1, 2))
-
-        # Reshape the output tensor to the original spatial dimensions
-        out = out.view(B, 1, H1, W1)  # Reshaping back to spatial dimensions
-
-        # # Resize the output back to the input's original dimensions (if necessary)
-        # out = F.interpolate(out, size=(H, W), mode='bilinear', align_corners=True)
+            # propagate , element wise multiplication x_ and self_attn_maps
+            x_ = x_ * self_attn_map_
+            x_ = x_.reshape(B, H1 * W1, H1, W1)
+            x_ = x_.permute(0, 2, 3, 1)
+            x_ = self.attn_module_list[i](x_)
+            out[key] = x_
 
         return out
 
@@ -561,18 +600,29 @@ class SemiTrainingAttentionBlocks(nn.Module):
 class MultiScaleFeatureFusion(nn.Module):
     '''
     N conv layers or bottleneck blocks to compress the feature dimension
-    
+
     M conv layers and upsampling to fusion the features
-    
+
     '''
+
     def __init__(self,
                  in_feature_dim=[],
-                 in_attn_res=[],
+                 out_feature_dim=[],
                  use_bottleneck=False) -> None:
         super().__init__()
-
-    def forward(self, features, attn_maps):
+        assert len(in_feature_dim) == len(out_feature_dim)
+        # init module list
+        self.module_list = nn.ModuleList()
+        for i in range(len(in_feature_dim)-1):
+            self.module_list.append(Fusion_Block(in_feature_dim[i], out_feature_dim[i]))
+            
+    def forward(self, features):
         # features: {'32': tensor, '16': tensor, '8': tensor}
-        # attn_maps: {'32': tensor, '16': tensor, '8': tensor}
-        pass
-    
+
+        key_list = list(features.keys())
+        ft = features[key_list[0]]
+        for i in range(len(key_list)-1):
+            ft = self.module_list[i](ft, features[key_list[i+1]])
+            
+        return ft
+        

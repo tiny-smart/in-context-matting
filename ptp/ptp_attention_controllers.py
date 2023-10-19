@@ -105,7 +105,8 @@ class AttentionStore(AttentionControl):
         super(AttentionStore, self).__init__()
         self.step_store = self.get_empty_store()
         self.attention_store = {}
-        store_res = store_res if isinstance(store_res, List) else [store_res]
+
+        store_res = [store_res] if isinstance(store_res, int) else list(store_res) 
         self.store_res = []
         for res in store_res:
             self.store_res.append(res**2)

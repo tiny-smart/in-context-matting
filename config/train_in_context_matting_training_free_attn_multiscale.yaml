@@ -9,8 +9,8 @@ model:
         losses: [
             "unknown_l1_loss",
             "known_l1_loss",
-            "loss_pha_laplacian",
-            "loss_gradient_penalty",
+            # "loss_pha_laplacian",
+            # "loss_gradient_penalty",
             # "smooth_l1_loss",
             # "cross_entropy_loss",
             # "focal_loss",
@@ -32,12 +32,12 @@ model:
         load_local: True
         if_softmax: 1
         feature_index_cor: 1
-        feature_index_matting: 1
+        feature_index_matting: [0, 1]
         attention_res: [24, 48] # [24, 48]
         set_diag_to_one: True
         time_steps: [0]
         extract_feature_inputted_to_layer: False
-        ensemble_size: 3
+        ensemble_size: 4
 
     cfg_in_context_decoder:
       target: icm.models.decoder.in_context_decoder.InContextDecoder
@@ -48,20 +48,22 @@ model:
           params:
             use_sigmoid: True
             ckpt: ""
-            in_chans: 1280
-            img_chans: 4
+            in_chans: 320
+            img_chans: 3
             convstream_out: [48, 96, 192]
             fusion_out: [256, 128, 64, 32]
         cfg_in_context_fusion:
-          target: icm.models.decoder.in_context_correspondence.TrainingFreeAttentionBlocks
+          target: icm.models.decoder.in_context_correspondence.SemiTrainingAttentionBlocks
           params:
-            res_ratio: 8
+            res_ratio: null
             pool_type: "min"
-            temp_softmax: 1
-            use_scale: True
             upsample_mode: "bicubic"
-            bottle_neck_dim: None
-            use_norm: 1280
+            bottle_neck_dim: null
+            use_norm: False
+            in_ft_dim: [1280, 1280]
+            in_attn_dim: [576, 2304]
+            attn_out_dim: 256
+            ft_out_dim: [320, 320]
 
 data:
   target: icm.data.data_module.DataModuleFromConfig
@@ -79,8 +81,9 @@ data:
           target: icm.data.image_file.ContextData
           params:
             ratio: 1
-            dataset_name: [ "AIM-ICM", 
-                # "open-images-test",
+            dataset_name: [
+                # "AIM-ICM",
+                "open-images-test",
                 # "open-images-validation",
                 # "open-images-train_0",
               ] # ["PPM", "AM2k", "RWP636", "P3M_val_np"]
@@ -102,9 +105,9 @@ data:
               ]
 
 trainer:
-  check_val_every_n_epoch: 5
+  check_val_every_n_step: 2000
   accelerator: "ddp"
-  gpus: 1
+  gpus: 2
   max_epochs: 1000
   auto_select_gpus: False
   num_sanity_val_steps: 0

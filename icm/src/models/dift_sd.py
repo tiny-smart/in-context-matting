@@ -528,6 +528,7 @@ class FeatureExtractor(nn.Module):
         return []
 
     def get_reference_feature(self, images):
+        self.controller.reset()
         batch_size = images.shape[0]
         features = self.dift_sd.forward_feature_extractor(
             self.prompt_embeds, images, t=self.time_steps[0], ensemble_size=self.ensemble_size) # b*e, c, h, w
@@ -538,10 +539,21 @@ class FeatureExtractor(nn.Module):
         return features.detach()
 
     def ensemble_feature(self, features, index, batch_size):
-        features = features[index].reshape(
-            batch_size, self.ensemble_size, *features[index].shape[1:])
-        features = features.mean(1, keepdim=False).detach()
-        return features
+        if isinstance(index, int):
+
+            features_ = features[index].reshape(
+                batch_size, self.ensemble_size, *features[index].shape[1:])
+            features_ = features_.mean(1, keepdim=False).detach()
+        else:
+            index = list(index)
+            res = ['24','48','96']
+            res = res[:len(index)]
+            features_ = {}
+            for i in range(len(index)):
+                features_[res[i]] = features[index[i]].reshape(
+                    batch_size, self.ensemble_size, *features[index[i]].shape[1:])
+                features_[res[i]] = features_[res[i]].mean(1, keepdim=False).detach()
+        return features_
 
     def get_source_feature(self, images):
         # return {"ft": [B, C, H, W], "attn": [B, H, W, H*W]}
@@ -556,8 +568,8 @@ class FeatureExtractor(nn.Module):
 
         attention_maps = self.get_feature_attention(batch_size)
 
-        output = {"ft_cor": self.ensemble_feature(ft, self.feature_index_cor, batch_size).detach(),
-                  "attn": attention_maps, 'ft_matting': self.ensemble_feature(ft, self.feature_index_matting, batch_size).detach()}
+        output = {"ft_cor": self.ensemble_feature(ft, self.feature_index_cor, batch_size),
+                  "attn": attention_maps, 'ft_matting': self.ensemble_feature(ft, self.feature_index_matting, batch_size)}
         return output
 
     def get_feature_attention(self, batch_size):
@@ -565,17 +577,24 @@ class FeatureExtractor(nn.Module):
         attention_maps = self.__aggregate_attention(
             from_where=["down", "mid", "up"], is_cross=False, batch_size=batch_size)
 
-        attention_maps = attention_maps.permute(0, 2, 1).reshape(
-            (batch_size, -1, self.attention_res, self.attention_res))  # [bs, h*w, h, w]
-        attention_maps = attention_maps.permute(0, 2, 3, 1)  # [bs, h, w, h*w]
+        for attn_map in attention_maps.keys():
+            attention_maps[attn_map] = attention_maps[attn_map].permute(0, 2, 1).reshape(
+                (batch_size, -1, int(attn_map), int(attn_map)))  # [bs, h*w, h, w]
+            attention_maps[attn_map] = attention_maps[attn_map].permute(0, 2, 3, 1)  # [bs, h, w, h*w]
         return attention_maps
 
     def __aggregate_attention(self, from_where: List[str], is_cross: bool, batch_size: int):
-        out = []
+        out = {}
         self.controller.between_steps()
         self.controller.cur_step=1
         attention_maps = self.controller.get_average_attention()
-        res = self.attention_res
+        for res in self.attention_res:
+            out[str(res)] = self.__aggregate_attention_single_res(
+                from_where, is_cross, batch_size, res, attention_maps)
+        return out
+    
+    def __aggregate_attention_single_res(self, from_where: List[str], is_cross: bool, batch_size: int, res: int, attention_maps):
+        out = []
         num_pixels = res ** 2
         for location in from_where:
             for item in attention_maps[f"{location}_{'cross' if is_cross else 'self'}"]:

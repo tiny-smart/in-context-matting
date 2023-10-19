@@ -21,9 +21,12 @@ class LossFunction(nn.Module):
     def loss_gradient_penalty(self, sample_map ,preds, targets):
         preds = preds['phas']
         targets = targets['phas']
-
-        #sample_map for unknown area
-        scale = sample_map.shape[0]*262144/torch.sum(sample_map)
+        h,w = sample_map.shape[2:]
+        if torch.sum(sample_map) == 0:
+            scale = 0
+        else:
+            #sample_map for unknown area
+            scale = sample_map.shape[0]*262144/torch.sum(sample_map)
 
         #gradient in x
         sobel_x_kernel = torch.tensor([[[[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]]]]).type(dtype=preds.type())
@@ -50,8 +53,13 @@ class LossFunction(nn.Module):
         return dict(loss_pha_laplacian=loss)
 
     def unknown_l1_loss(self, sample_map, preds, targets):
-        
-        scale = sample_map.shape[0]*262144/torch.sum(sample_map)
+        h,w = sample_map.shape[2:]
+        if torch.sum(sample_map) == 0:
+            scale = 0
+        else:
+            #sample_map for unknown area
+            scale = sample_map.shape[0]*262144/torch.sum(sample_map)
+
         # scale = 1
 
         loss = F.l1_loss(preds['phas']*sample_map, targets['phas']*sample_map)*scale
@@ -60,7 +68,7 @@ class LossFunction(nn.Module):
     def known_l1_loss(self, sample_map, preds, targets):
         new_sample_map = torch.zeros_like(sample_map)
         new_sample_map[sample_map==0] = 1
-        
+        h,w = sample_map.shape[2:]
         if torch.sum(new_sample_map) == 0:
             scale = 0
         else:

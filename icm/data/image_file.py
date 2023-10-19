@@ -332,6 +332,11 @@ class ContextData():
             # read json file and append to dataset
             with open(json_dir) as f:
                 new_data = json.load(f)
+                # filter out the items if each element in "instance_area_ratio" list >0.1
+                # check if "instance_area_ratio" exists
+                if 'instance_area_ratio' in new_data[list(new_data.keys())[0]].keys():
+                    new_data = {k: v for k, v in new_data.items(
+                    ) if all([i > 0.1 for i in v['instance_area_ratio']])}
                 # concat new_data to dataset
                 dataset.update(new_data)
 
