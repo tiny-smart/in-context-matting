@@ -120,65 +120,65 @@ def get_dir_ext(dataset):
         trimap_ext = '.png'
 
     elif dataset == 'PPM':
-        image_dir = "/data/guohe/dataset/PPM-100/image_train/"
-        label_dir = "/data/guohe/dataset/PPM-100/matte_train/"
-        trimap_dir = "/data/guohe/dataset/PPM-100/trimap_self_generated/"
+        image_dir = "/data1/guohe/ImageMatting/Combined_Dataset/PPM-100/image_train/"
+        label_dir = "/data1/guohe/ImageMatting/Combined_Dataset/PPM-100/matte_train/"
+        trimap_dir = "/data1/guohe/ImageMatting/Combined_Dataset/PPM-100/trimap_self_generated/"
 
         merged_ext = '.jpg'
         alpha_ext = '.jpg'
         trimap_ext = '.jpg'
     elif dataset == 'AM2k_train':
-        image_dir = "/data/guohe/dataset/AM-2K/train/original"
-        label_dir = "/data/guohe/dataset/AM-2K/train/mask"
-        trimap_dir = "/data/guohe/dataset/AM-2K/train/trimap_self_generated"
+        image_dir = "/data1/guohe/ImageMatting/Combined_Dataset/AM-2K/train/original"
+        label_dir = "/data1/guohe/ImageMatting/Combined_Dataset/AM-2K/train/mask"
+        trimap_dir = "/data1/guohe/ImageMatting/Combined_Dataset/AM-2K/train/trimap_self_generated"
 
         merged_ext = '.jpg'
         alpha_ext = '.png'
         trimap_ext = '.png'
 
     elif dataset == 'AM2k_val':
-        image_dir = "/data/guohe/dataset/AM-2K/validation/original"
-        label_dir = "/data/guohe/dataset/AM-2K/validation/mask"
-        trimap_dir = "/data/guohe/dataset/AM-2K/validation/trimap"
+        image_dir = "/data1/guohe/ImageMatting/Combined_Dataset/AM-2K/validation/original"
+        label_dir = "/data1/guohe/ImageMatting/Combined_Dataset/AM-2K/validation/mask"
+        trimap_dir = "/data1/guohe/ImageMatting/Combined_Dataset/AM-2K/validation/trimap"
 
         merged_ext = '.jpg'
         alpha_ext = '.png'
         trimap_ext = '.png'
     elif dataset == 'RWP636':
-        image_dir = '/data/guohe/dataset/RealWorldPortrait-636/image'
-        label_dir = '/data/guohe/dataset/RealWorldPortrait-636/alpha'
-        trimap_dir = '/data/guohe/dataset/RealWorldPortrait-636/trimap'
+        image_dir = '/data1/guohe/ImageMatting/Combined_Dataset/RealWorldPortrait-636/image'
+        label_dir = '/data1/guohe/ImageMatting/Combined_Dataset/RealWorldPortrait-636/alpha'
+        trimap_dir = '/data1/guohe/ImageMatting/Combined_Dataset/RealWorldPortrait-636/trimap'
         merged_ext = '.jpg'
         alpha_ext = '.png'
         trimap_ext = '.png'
     elif dataset == 'P3M_val_np':  # non blurred
-        image_dir = '/data/guohe/dataset/P3M-10k/validation/P3M-500-NP/original_image'
-        label_dir = '/data/guohe/dataset/P3M-10k/validation/P3M-500-NP/mask'
-        trimap_dir = '/data/guohe/dataset/P3M-10k/validation/P3M-500-NP/trimap'
+        image_dir = '/data1/guohe/ImageMatting/Combined_Dataset/P3M-10k/validation/P3M-500-NP/original_image'
+        label_dir = '/data1/guohe/ImageMatting/Combined_Dataset/P3M-10k/validation/P3M-500-NP/mask'
+        trimap_dir = '/data1/guohe/ImageMatting/Combined_Dataset/P3M-10k/validation/P3M-500-NP/trimap'
         merged_ext = '.jpg'
         alpha_ext = '.png'
         trimap_ext = '.png'
     elif dataset == 'P3M_val_p':  # blurred
-        image_dir = '/data/guohe/dataset/P3M-10k/validation/P3M-500-P/blurred_image'
-        label_dir = '/data/guohe/dataset/P3M-10k/validation/P3M-500-P/mask'
-        trimap_dir = '/data/guohe/dataset/P3M-10k/validation/P3M-500-P/trimap'
+        image_dir = '/data1/guohe/ImageMatting/Combined_Dataset/P3M-10k/validation/P3M-500-P/blurred_image'
+        label_dir = '/data1/guohe/ImageMatting/Combined_Dataset/P3M-10k/validation/P3M-500-P/mask'
+        trimap_dir = '/data1/guohe/ImageMatting/Combined_Dataset/P3M-10k/validation/P3M-500-P/trimap'
         merged_ext = '.jpg'
         alpha_ext = '.png'
         trimap_ext = '.png'
     # no trimap
     # elif dataset == 'P3M_train':  # blurred
-    #     image_dir = '/data/guohe/dataset/P3M-10k/train/blurred_image'
-    #     label_dir = '/data/guohe/dataset/P3M-10k/train/mask'
-    #     trimap_dir = '/data/guohe/dataset/P3M-10k/train/trimap'
+    #     image_dir = '/data1/guohe/ImageMatting/Combined_Dataset/P3M-10k/train/blurred_image'
+    #     label_dir = '/data1/guohe/ImageMatting/Combined_Dataset/P3M-10k/train/mask'
+    #     trimap_dir = '/data1/guohe/ImageMatting/Combined_Dataset/P3M-10k/train/trimap'
     #     merged_ext = '.jpg'
     #     alpha_ext = '.png'
     #     trimap_ext = '.png'
 
-    elif dataset == 'RM1k': 
-        image_dir = '/data/guohe/dataset/RM1K/Image'
-        label_dir = '/data/guohe/dataset/RM1K/GT'
-        trimap_dir = '/data/guohe/dataset/RM1K/trimap_self_generated'
-        merged_ext = '.jpg'
+    elif dataset in ['RM1k', 'RM1K']: 
+        image_dir = '/data1/guohe/ImageMatting/Combined_Dataset/RM1K/RM1K/Image'
+        label_dir = '/data1/guohe/ImageMatting/Combined_Dataset/RM1K/RM1K/GT'
+        trimap_dir = '/data1/guohe/ImageMatting/Combined_Dataset/RM1K/RM1K/trimap_self_generated'
+        merged_ext = '.png'
         alpha_ext = '.png'
         trimap_ext = '.png'
         

@@ -917,8 +917,14 @@ class InContextDataset(Dataset):
         # get context image
         class_name = str(
             image_info['class'])+'-'+str(image_info['sub_class'])+'-'+str(image_info['HalfOrFull'])
-        (reference_image_name, context_dataset_name) = self.image_class_dict[class_name][np.random.randint(
-            len(self.image_class_dict[class_name]))]
+        
+        context_set = self.image_class_dict[class_name]
+        if len(context_set) > 2:
+            # delet image_name from context_set (dict)
+            context_set = [x for x in context_set if x[0] != image_name]
+            
+        (reference_image_name, context_dataset_name) = context_set[np.random.randint(
+            len(context_set))]
         reference_image_sample = self.get_sample(
             reference_image_name, context_dataset_name)
 
@@ -947,6 +953,11 @@ class InContextDataset(Dataset):
         mask = (trimap >= 170).astype(np.float32)
         image_name = os.path.split(image_path)[-1]
 
+        if 'open-images' in dataset_name:
+            # 量化alpha to 0，1
+            alpha[alpha < 0.5] = 0
+            alpha[alpha >= 0.5] = 1
+            
         sample = {'image': image, 'alpha': alpha, 'trimap': trimap,
                   'mask': mask, 'image_name': image_name, 'alpha_shape': alpha.shape, 'dataset_name': dataset_name}
 

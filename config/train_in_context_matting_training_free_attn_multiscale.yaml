@@ -2,20 +2,25 @@ model:
   target: icm.models.in_context_matting_.InContextMatting
   params:
     learning_rate: 0.0004
-
     cfg_loss_function:
-      target: icm.models.criterion.loss_function.LossFunction
+      target: icm.models.criterion.loss_function.LossFunction2
       params:
-        losses: [
+        losses_seg: [
             # "unknown_l1_loss",
             # "known_l1_loss",
             # "loss_pha_laplacian",
             # "loss_gradient_penalty",
-            "smooth_l1_loss",
+            "known_smooth_l1_loss",
             # "cross_entropy_loss",
             # "focal_loss",
           ]
+        losses_matting: [
+            "unknown_l1_loss",
+            "known_l1_loss",
+            "loss_pha_laplacian",
+            "loss_gradient_penalty",
 
+          ]
     cfg_scheduler:
       target: icm.lr_scheduler.LambdaLinearScheduler
       params:
@@ -80,10 +85,15 @@ data:
         data:
           target: icm.data.image_file.ContextData
           params:
-            ratio: 0.8
+            ratio: 1
             dataset_name: [
-                # "AIM-ICM",
+                "AIM-ICM",
                 "open-images-test",
+                "RM1k",
+                # "PPM",
+                "AM2k_train",
+                "RWP636",
+                "P3M_val_np",
                 # "open-images-validation",
                 # "open-images-train_0",
               ] # ["PPM", "AM2k", "RWP636", "P3M_val_np"]
@@ -96,12 +106,10 @@ data:
         data:
           target: icm.data.image_file.ContextData
           params:
-            ratio: 0.8
+            ratio: 0
             dataset_name: [
-                # "ICM57",
-                "open-images-test",
-                # "open-images-validation",
-                # "open-images-train_0",
+                "ICM57",
+                # "open-images-test",
               ]
 
 trainer:
@@ -110,18 +118,11 @@ trainer:
   max_epochs: 1000
   auto_select_gpus: False
   num_sanity_val_steps: 0
-  plugins:
-    target: pytorch_lightning.plugins.DDPPlugin
-    params:
-      find_unused_parameters: False
-  # weights_summary: full
-
   cfg_logger:
     target: pytorch_lightning.loggers.tensorboard.TensorBoardLogger
     params:
       save_dir: logs # set in main.py
       default_hp_metric: False
-
   cfg_callbacks:
     modelcheckpoint:
       target: pytorch_lightning.callbacks.ModelCheckpoint
@@ -134,3 +135,9 @@ trainer:
         # save_weights_only: False
         filename: "{epoch:02d}-{val/mse_all:.5f}"
         auto_insert_metric_name: False
+  plugins:
+    target: pytorch_lightning.plugins.DDPPlugin
+    params:
+      find_unused_parameters: False
+  # weights_summary: full
+

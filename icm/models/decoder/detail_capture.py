@@ -35,6 +35,7 @@ class Basic_Conv3x3_attn(nn.Module):
         self,
         in_chans,
         out_chans,
+        res = False,
         stride=1,
         padding=1,
     ):
@@ -50,6 +51,31 @@ class Basic_Conv3x3_attn(nn.Module):
         x = self.conv(x)
 
         return x
+    
+# class Basic_Conv3x3_attn(nn.Module):
+#     """
+#     Basic convolution layers including: Conv3x3, BatchNorm2d, ReLU layers.
+#     """
+#     def __init__(
+#         self,
+#         in_chans,
+#         out_chans,
+#         res = False,
+#         stride=1,
+#         padding=1,
+#     ):
+#         super().__init__()
+#         self.conv = nn.Conv2d(in_chans, out_chans, 3, stride, padding, bias=False)
+#         self.ln = nn.LayerNorm([in_chans, res, res], elementwise_affine=True)
+#         self.relu = nn.ReLU(True)
+
+#     def forward(self, x):
+#         x = x.permute(0, 3, 1, 2)
+#         x = self.ln(x)
+#         x = self.relu(x)
+#         x = self.conv(x)
+
+#         return x
     
 class ConvStream(nn.Module):
     """

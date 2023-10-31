@@ -7,7 +7,7 @@ from torch.nn import functional as F
 from icm.models.decoder.bottleneck_block import BottleneckBlock
 
 from icm.models.decoder.detail_capture import Basic_Conv3x3, Basic_Conv3x3_attn, Fusion_Block
-
+import math
 def compute_correspondence_matrix(source_feature, ref_feature):
     """
     Compute correspondence matrix between source and reference features.
@@ -485,7 +485,7 @@ class SemiTrainingAttentionBlocks(nn.Module):
         self.attn_module_list = nn.ModuleList()
         self.ft_attn_module_list = nn.ModuleList()
         for i in range(len(in_attn_dim)):
-            self.attn_module_list.append(Basic_Conv3x3_attn(in_attn_dim[i], attn_out_dim))
+            self.attn_module_list.append(Basic_Conv3x3_attn(in_attn_dim[i], attn_out_dim, int(math.sqrt(in_attn_dim[i]))))
             self.ft_attn_module_list.append(Basic_Conv3x3(ft_out_dim[i] + attn_out_dim, ft_out_dim[i]))
         # init module list for ft, with basic 3*3 conv
         self.ft_module_list = nn.ModuleList()
