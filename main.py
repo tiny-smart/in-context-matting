@@ -9,7 +9,7 @@ if __name__ == '__main__':
     # os.environ["MKL_NUM_THREADS"] = "1"
     # os.environ["NUMEXPR_NUM_THREADS"] = "1"
     
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1,2,3,"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,"
     from icm.util import instantiate_from_config
     import torch
     from pytorch_lightning import Trainer, seed_everything
@@ -24,12 +24,12 @@ if __name__ == '__main__':
             type=str,
             # "diffusion_matte-train_adapter_params_True-bs_2",
             # "in_context_matting-0.1",
-            default="in_context_matting-semitrainingattn_6data",
+            default="in_context_matting-semitrainingattn_6data_200t_10rm",
         )
         parser.add_argument(
             "--debug",
             type=bool,
-            default=True,
+            default=False,
         )
         parser.add_argument(
             "--resume",
@@ -37,7 +37,7 @@ if __name__ == '__main__':
             # default='logs/2023-09-12_19-21-22-in_context_matting-1.0-2waytransformer_norm_ff_4lr/checkpoints/10-0.01410-0.03703.ckpt',
             # default="logs/2023-09-27_11-43-30-in_context_matting-openimages-l1loss-1waytrans-kvembed-deft/checkpoints/01-0.07059-0.22562.ckpt",
             # default="logs/2023-10-16_09-27-01-in_context_matting-trainingfreeattn/checkpoints/02-0.00000.ckpt",
-            default="logs/2023-10-30_10-44-35-in_context_matting-semitrainingattn_6data/checkpoints/10-0.01130.ckpt",
+            default="",
         )
         parser.add_argument(
             "--fine_tune",
@@ -109,7 +109,7 @@ if __name__ == '__main__':
     if args.debug:
         cfg_trainer['limit_train_batches'] = 2
         # cfg_trainer['log_every_n_steps'] = 1
-        # cfg_trainer['limit_val_batches'] = 3
+        cfg_trainer['limit_val_batches'] = 3
         # cfg_trainer['overfit_batches'] = 2
 
     # init logger

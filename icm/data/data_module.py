@@ -10,9 +10,10 @@ def worker_init_fn(worker_id):
     
 class DataModuleFromConfig(pl.LightningDataModule):
     def __init__(self, train=None, validation=None, test=None, predict=None, num_workers=None,
-                 batch_size=None, shuffle_train=False):
+                 batch_size=None, shuffle_train=False,batch_size_val=None):
         super().__init__()
         self.batch_size = batch_size
+        self.batch_size_val = batch_size_val
         self.dataset_configs = dict()
         self.num_workers = num_workers if num_workers is not None else batch_size * 2
         self.shuffle_train = shuffle_train
@@ -40,9 +41,11 @@ class DataModuleFromConfig(pl.LightningDataModule):
                            worker_init_fn=worker_init_fn,)
         
     def _val_dataloader(self):
+        
         return DataLoader(self.datasets["validation"],
-                           batch_size=self.batch_size,
+                           batch_size=self.batch_size if self.batch_size_val is None else self.batch_size_val,
                            num_workers=self.num_workers,
+                           shuffle=True,
                            worker_init_fn=worker_init_fn,
                            )
         

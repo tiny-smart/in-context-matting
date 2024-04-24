@@ -6,8 +6,9 @@ from torch.optim.lr_scheduler import LambdaLR
 
 from icm.models.criterion.matting_criterion_eval import compute_mse_loss_torch, compute_sad_loss_torch
 from icm.util import instantiate_from_config
-
-
+from pytorch_lightning.utilities import rank_zero_only
+import os
+import cv2
 class InContextMatting(pl.LightningModule):
     '''
     In Context Matting Model
@@ -103,7 +104,9 @@ class InContextMatting(pl.LightningModule):
     def validation_step_end(self, outputs):
 
         preds, batch = outputs
-
+        h, w = batch['alpha_shape']
+        
+        
         cross_map = batch['cross_map']
         self_map = batch['self_map']
         # resize cross_map and self_map to the same size as preds
@@ -132,13 +135,65 @@ class InContextMatting(pl.LightningModule):
         dataset_name = batch["dataset_name"][0]
         image_name = batch["image_name"][0].split('.')[0]
 
+        # save pre to model.val_save_path
+        
+        # if self.val_save_path is not None:
+        if hasattr(self, 'val_save_path'):
+            os.makedirs(self.val_save_path, exist_ok=True)
+            # resize preds to h,w
+            pred_ = torch.nn.functional.interpolate(
+                pred.unsqueeze(0).unsqueeze(0), size=(h, w), mode='bilinear', align_corners=False)
+            pred_ = pred_.squeeze().cpu().numpy()
+            pred_ = pred_.astype('uint8')
+            cv2.imwrite(os.path.join(self.val_save_path, image_name+'.png'), pred_)
+            
         masked_reference_image = reference_image*guidance_on_reference_image
-
         self.__compute_and_log_mse_sad_of_one_sample(
             pred, label, trimap, prefix="val")
 
         self.__log_image(
             source_image, masked_reference_image, pred, label, dataset_name, image_name, prefix='val', self_map=self_map, cross_map=cross_map)
+
+
+    # def validation_step_end(self, outputs):
+
+    #     preds, batch = outputs
+
+    #     cross_map = batch['cross_map']
+    #     self_map = batch['self_map']
+    #     # resize cross_map and self_map to the same size as preds
+    #     cross_map = torch.nn.functional.interpolate(
+    #         cross_map, size=preds.shape[2:], mode='bilinear', align_corners=False)
+    #     self_map = torch.nn.functional.interpolate(
+    #         self_map, size=preds.shape[2:], mode='bilinear', align_corners=False)
+        
+    #     # normalize cross_map and self_map
+    #     cross_map = (cross_map - cross_map.min()) / \
+    #         (cross_map.max() - cross_map.min())
+    #     self_map = (self_map - self_map.min()) / \
+    #         (self_map.max() - self_map.min())
+        
+    #     cross_map = cross_map[0].squeeze()*255.0
+    #     self_map = self_map[0].squeeze()*255.0
+        
+    #     # get one sample from batch
+    #     pred = preds[0].squeeze()*255.0
+    #     source_image = batch['source_image'][0]
+    #     label = batch["alpha"][0].squeeze()*255.0
+    #     trimap = batch["trimap"][0].squeeze()*255.0
+    #     trimap[trimap == 127.5] = 128
+    #     reference_image = batch["reference_image"][0]
+    #     guidance_on_reference_image = batch["guidance_on_reference_image"][0]
+    #     dataset_name = batch["dataset_name"][0]
+    #     image_name = batch["image_name"][0].split('.')[0]
+
+    #     masked_reference_image = reference_image*guidance_on_reference_image
+
+    #     self.__compute_and_log_mse_sad_of_one_sample(
+    #         pred, label, trimap, prefix="val")
+
+    #     self.__log_image(
+    #         source_image, masked_reference_image, pred, label, dataset_name, image_name, prefix='val', self_map=self_map, cross_map=cross_map)
 
     def __compute_and_log_mse_sad_of_one_sample(self, pred, label, trimap, prefix="val"):
         # compute loss for unknown pixels
@@ -223,3 +278,22 @@ class InContextMatting(pl.LightningModule):
             }
         ]
         return scheduler
+
+from pytorch_lightning.callbacks import ModelCheckpoint
+
+class ModifiedModelCheckpoint(ModelCheckpoint):
+    def delete_frozen_params(self, ckpt):
+        # delete params with requires_grad=False
+        for k in list(ckpt["state_dict"].keys()):
+            # remove ckpt['state_dict'][k] if 'feature_extractor' in k
+            if "feature_extractor" in k:
+                del ckpt["state_dict"][k]
+        return ckpt
+
+    def _save_model(self, trainer: "pl.Trainer", filepath: str) -> None:
+        super()._save_model(trainer, filepath)
+
+        if trainer.is_global_zero:
+            ckpt = torch.load(filepath)
+            ckpt = self.delete_frozen_params(ckpt)
+            torch.save(ckpt, filepath)

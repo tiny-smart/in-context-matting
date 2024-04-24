@@ -40,7 +40,7 @@ model:
         feature_index_matting: [0, 1]
         attention_res: [24, 48] # [24, 48]
         set_diag_to_one: False
-        time_steps: [0]
+        time_steps: [200]
         extract_feature_inputted_to_layer: False
         ensemble_size: 4
 
@@ -69,11 +69,13 @@ model:
             in_attn_dim: [576, 2304]
             attn_out_dim: 256
             ft_out_dim: [320, 320]
+            training_cross_attn: False
 
 data:
   target: icm.data.data_module.DataModuleFromConfig
   params:
     batch_size: 2
+    batch_size_val: 1
     num_workers: 8
     shuffle_train: False
     train:
@@ -87,7 +89,7 @@ data:
           params:
             ratio: 1
             dataset_name: [
-                "AIM-ICM",
+                # "AIM-ICM",
                 "open-images-test",
                 "RM1k",
                 # "PPM",
@@ -114,7 +116,7 @@ data:
 
 trainer:
   accelerator: "ddp"
-  gpus: 4
+  gpus: 2
   max_epochs: 1000
   auto_select_gpus: False
   num_sanity_val_steps: 0
@@ -125,7 +127,7 @@ trainer:
       default_hp_metric: False
   cfg_callbacks:
     modelcheckpoint:
-      target: pytorch_lightning.callbacks.ModelCheckpoint
+      target: icm.models.in_context_matting_.ModifiedModelCheckpoint
       params:
         monitor: epoch
         mode: max

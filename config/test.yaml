@@ -1,18 +1,18 @@
 data:
   target: icm.data.data_module.DataModuleFromConfig
   params:
-    batch_size: 2
+    batch_size: 1
     num_workers: 2
     shuffle_train: False
     validation:
       target: icm.data.data_generator.InContextDataset
       params:
-        crop_size: 512
+        crop_size: 768
         phase: train
-        norm_type: "imagenet" # "imagenet" or "sd"
+        norm_type: "sd" # "imagenet" or "sd"
         data:
           target: icm.data.image_file.ContextData
           params:
-            ratio: 0.9
+            ratio: 1
             dataset_name:
-              ["open-images-test","open-images-validation" ] # ["PPM", "AM2k", "RWP636", "P3M_val_np"]
+              ["ICM57" ] # ["PPM", "AM2k", "RWP636", "P3M_val_np"]

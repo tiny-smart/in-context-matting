@@ -6,7 +6,7 @@ import torch
 from pytorch_lightning import Trainer, seed_everything
 import os
 from tqdm import tqdm
-os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 # import tensorboard
 
@@ -36,7 +36,12 @@ def parse_args():
     parser.add_argument(
         "--checkpoint",
         type=str,
-        default="logs/2023-10-01_14-58-48-in_context_matting/checkpoints/48-0.06684.ckpt",
+        default="logs/2023-11-06_17-21-45-in_context_matting-semitrainingattn_6data_200t/checkpoints/12-0.00800-mat.ckpt",
+    )
+    parser.add_argument(
+        "--save_path",
+        type=str,
+        default="logs/2023-11-06_17-21-45-in_context_matting-semitrainingattn_6data_200t/val_12mat",
     )
     parser.add_argument(
         "--config",
@@ -124,5 +129,7 @@ if __name__ == '__main__':
     # init trainer
     trainer_opt = argparse.Namespace(**cfg_trainer)
     trainer = Trainer.from_argparse_args(trainer_opt)
+    # init logger
+    model.val_save_path = args.save_path
     trainer.validate(model, data.val_dataloader())
     
