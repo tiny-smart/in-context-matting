@@ -4,7 +4,6 @@ if __name__ == '__main__':
     from omegaconf import OmegaConf
 
     import os
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,"
     
     from icm.util import instantiate_from_config
     import torch
@@ -36,7 +35,7 @@ if __name__ == '__main__':
         parser.add_argument(
             "--config",
             type=str,
-            default="./config_IconMatting/hparams.yaml",
+            default="",
         )
         parser.add_argument(
             "--logdir",

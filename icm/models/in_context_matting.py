@@ -149,8 +149,8 @@ class InContextMatting(pl.LightningModule):
             cv2.imwrite(os.path.join(self.val_save_path, image_name+'.png'), pred_)
             
         masked_reference_image = reference_image*guidance_on_reference_image
-        self.__compute_and_log_mse_sad_of_one_sample(
-            pred, label, trimap, prefix="val")
+        # self.__compute_and_log_mse_sad_of_one_sample(
+        #     pred, label, trimap, prefix="val")
 
         self.__log_image(
             source_image, masked_reference_image, pred, label, dataset_name, image_name, prefix='val', self_map=self_map, cross_map=cross_map)

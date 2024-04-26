@@ -6,7 +6,6 @@ import torch
 from pytorch_lightning import Trainer, seed_everything
 import os
 from tqdm import tqdm
-os.environ["CUDA_VISIBLE_DEVICES"] = "1,"
 
 def load_model_from_config(config, ckpt, verbose=False):
     print(f"Loading model from {ckpt}")
@@ -33,17 +32,17 @@ def parse_args():
     parser.add_argument(
         "--checkpoint",
         type=str,
-        default="/data1/guohe/diffusion-matting/ICM/logs/12-0.00800-mat.pth",
+        default="",
     )
     parser.add_argument(
         "--save_path",
         type=str,
-        default="logs/eval/",
+        default="",
     )
     parser.add_argument(
         "--config",
         type=str,
-        default="config_IconMatting/eval.yaml",
+        default="",
     )
     parser.add_argument(
         "--seed",

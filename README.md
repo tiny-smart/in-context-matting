@@ -15,16 +15,41 @@
 
 ## TODO:
 - [x] Release code
-- [ ] Release pre-trained models and instructions for inference
-- [ ] Release ICM-57 dataset
+- [x] Release pre-trained models and instructions for inference
+- [x] Release ICM-57 dataset
 - [ ] Release training dataset and instructions for training
 
 ## Requirements
 We follow the environment setup of [Stable Diffusion Version 2](https://github.com/Stability-AI/StableDiffusion#requirements).
-<!-- ## Usage
- -->
 
-<!-- ## Dataset -->
+## Usage
+
+To evaluate the performance on the ICM-57 dataset using the `eval.py` script, follow these instructions:
+
+1. **Download the Pretrained Model:**
+   - Download the pretrained model from [this link](https://pan.baidu.com/s/1j5hDdd1mXV0O03xJyOz_zQ?pwd=BA1c).
+
+2. **Prepare the dataset:**
+   Ensure that your ICM-57 is ready.
+
+3. **Run the Evaluation:**
+   Use the following command to run the evaluation script. Replace the placeholders with the actual paths if they differ.
+
+   ```bash
+   python eval.py --checkpoint PATH_TO_MODEL --save_path results/ --config config/eval.yaml
+   ```
+
+### Dataset
+**ICM-57**
+- Download link: [ICM-57 Dataset](https://pan.baidu.com/s/1ZJU_XHEVhIaVzGFPK_XCRg?pwd=BA1c)
+- **Installation Guide**:
+  1. After downloading, unzip the dataset into the `datasets/` directory of the project.
+  2. Ensure the structure of the dataset folder is as follows:
+     ```
+     datasets/ICM57/
+     ├── image
+     └── alpha
+     ```
 
 ## Statement
 
