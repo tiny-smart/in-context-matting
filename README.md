@@ -27,7 +27,7 @@ We follow the environment setup of [Stable Diffusion Version 2](https://github.c
 To evaluate the performance on the ICM-57 dataset using the `eval.py` script, follow these instructions:
 
 1. **Download the Pretrained Model:**
-   - Download the pretrained model from [this link](https://pan.baidu.com/s/1j5hDdd1mXV0O03xJyOz_zQ?pwd=BA1c).
+   - Download the pretrained model from [this link](https://pan.baidu.com/s/1HPbRRE5ZtPRpOSocm9qOmA?pwd=BA1c).
 
 2. **Prepare the dataset:**
    Ensure that your ICM-57 is ready.
@@ -50,6 +50,10 @@ To evaluate the performance on the ICM-57 dataset using the `eval.py` script, fo
      ├── image
      └── alpha
      ```
+
+### Acknowledgments
+
+We would like to express our gratitude to the developers and contributors of the [DIFT](https://github.com/Tsingularity/dift) and [Prompt-to-Prompt](https://github.com/google/prompt-to-prompt/) projects. Their shared resources and insights have significantly aided the development of our work.
 
 ## Statement
 
