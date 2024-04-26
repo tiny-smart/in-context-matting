@@ -1,0 +1,118 @@
+model:
+  target: icm.models.in_context_matting.InContextMatting
+  params:
+    learning_rate: 0.0004
+    cfg_loss_function:
+      target: icm.criterion.loss_function.LossFunction2
+      params:
+        losses_seg:
+          - known_smooth_l1_loss
+        losses_matting:
+          - unknown_l1_loss
+          - known_l1_loss
+          - loss_pha_laplacian
+          - loss_gradient_penalty
+    cfg_scheduler:
+      target: icm.lr_scheduler.LambdaLinearScheduler
+      params:
+        warm_up_steps:
+          - 250
+        cycle_lengths:
+          - 10000000000000
+        f_start:
+          - 1.0e-06
+        f_max:
+          - 1.0
+        f_min:
+          - 1.0
+    cfg_feature_extractor:
+      target: icm.models.feature_extractor.dift_sd.FeatureExtractor
+      params:
+        sd_id: stabilityai/stable-diffusion-2-1
+        load_local: true
+        if_softmax: 1
+        feature_index_cor: 1
+        feature_index_matting:
+        - 0
+        - 1
+        attention_res:
+        - 24
+        - 48
+        set_diag_to_one: false
+        time_steps:
+        - 200
+        extract_feature_inputted_to_layer: false
+        ensemble_size: 4
+    cfg_in_context_decoder:
+      target: icm.models.decoder.in_context_decoder.InContextDecoder
+      params:
+        freeze_in_context_fusion: false
+        cfg_detail_decoder:
+          target: icm.models.decoder.detail_capture.DetailCapture
+          params:
+            use_sigmoid: true
+            ckpt: ''
+            in_chans: 320
+            img_chans: 3
+            convstream_out:
+            - 48
+            - 96
+            - 192
+            fusion_out:
+            - 256
+            - 128
+            - 64
+            - 32
+        cfg_in_context_fusion:
+          target: icm.models.decoder.in_context_correspondence.SemiTrainingAttentionBlocks
+          params:
+            res_ratio: null
+            pool_type: min
+            upsample_mode: bicubic
+            bottle_neck_dim: null
+            use_norm: 1280
+            in_ft_dim:
+            - 1280
+            - 1280
+            in_attn_dim:
+            - 576
+            - 2304
+            attn_out_dim: 256
+            ft_out_dim:
+            - 320
+            - 320
+            training_cross_attn: false
+data:
+  target: icm.data.data_module.DataModuleFromConfig
+  params:
+    batch_size: 2
+    batch_size_val: 1
+    num_workers: 8
+    shuffle_train: false
+    validation:
+      target: icm.data.data_generator.InContextDataset
+      params:
+        crop_size: 768
+        phase: val
+        norm_type: sd
+        data:
+          target: icm.data.image_file.ContextData
+          params:
+            ratio: 0
+            dataset_name:
+            - ICM57
+trainer:
+  accelerator: ddp
+  gpus: 1
+  max_epochs: 1000
+  auto_select_gpus: false
+  num_sanity_val_steps: 0
+  cfg_logger:
+    target: pytorch_lightning.loggers.tensorboard.TensorBoardLogger
+    params:
+      save_dir: logs
+      default_hp_metric: false
+  plugins:
+    target: pytorch_lightning.plugins.DDPPlugin
+    params:
+      find_unused_parameters: false

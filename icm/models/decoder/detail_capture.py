@@ -1,7 +1,6 @@
 import torch
 from torch import nn
 from torch.nn import functional as F
-import icm.models.decoder.layers_WS as L
 
 class Basic_Conv3x3(nn.Module):
     """

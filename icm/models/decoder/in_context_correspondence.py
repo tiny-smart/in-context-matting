@@ -9,7 +9,7 @@ from icm.models.decoder.bottleneck_block import BottleneckBlock
 
 from icm.models.decoder.detail_capture import Basic_Conv3x3, Basic_Conv3x3_attn, Fusion_Block
 import math
-from icm.models.attention.attention_sam import TwoWayAttentionBlock, Attention, MLPBlock
+from icm.models.decoder.attention import Attention, MLPBlock
 
 
 class OneWayAttentionBlock(nn.Module):
