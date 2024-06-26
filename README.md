@@ -62,4 +62,4 @@ We would like to express our gratitude to the developers and contributors of the
 
 ``` -->
 
-This project is under the MIT license. For further questions, please contact <strong><i>He Guo</i></strong> at [hguo01@hust.edu.cn](mailto:hguo01@hust.edu.cn).
+This project is under the MIT license. For technical questions, please contact <strong><i>He Guo</i></strong> at [hguo01@hust.edu.cn](mailto:hguo01@hust.edu.cn). For commerial use, please contact <strong><i>Hao Lu</i></strong> at [hlu@hust.edu.cn](mailto:hlu@hust.edu.cn)
