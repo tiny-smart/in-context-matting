@@ -17,7 +17,7 @@
 - [x] Release code
 - [x] Release pre-trained models and instructions for inference
 - [x] Release ICM-57 dataset
-- [ ] Release training dataset and instructions for training
+- [x] Release training scripts
 
 ## Requirements
 We follow the environment setup of [Stable Diffusion Version 2](https://github.com/Stability-AI/StableDiffusion#requirements).
@@ -41,7 +41,7 @@ To evaluate the performance on the ICM-57 dataset using the `eval.py` script, fo
 
 ### Dataset
 **ICM-57**
-- Download link: [ICM-57 Dataset](https://pan.baidu.com/s/1ZJU_XHEVhIaVzGFPK_XCRg?pwd=BA1c)
+- Download link: [ICM-57 Dataset](https://pan.baidu.com/s/1PICNOfnogUZrsAkWkSvtig) Code: BA1c
 - **Installation Guide**:
   1. After downloading, unzip the dataset into the `datasets/` directory of the project.
   2. Ensure the structure of the dataset folder is as follows:
