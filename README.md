@@ -27,7 +27,7 @@ We follow the environment setup of [Stable Diffusion Version 2](https://github.c
 To evaluate the performance on the ICM-57 dataset using the `eval.py` script, follow these instructions:
 
 1. **Download the Pretrained Model:**
-   - Download the pretrained model from [this link](https://pan.baidu.com/s/1HPbRRE5ZtPRpOSocm9qOmA?pwd=BA1c).
+   - Download the pretrained model from [this link](https://pan.baidu.com/s/1IvGgKE2jnOqjgbZCED1imA?pwd=BA1c).
 
 2. **Prepare the dataset:**
    Ensure that your ICM-57 is ready.
